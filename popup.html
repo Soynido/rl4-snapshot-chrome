@@ -75,6 +75,15 @@
 
         <a href="#" id="viewRawBtn" class="link-subtle">View raw JSON</a>
       </div>
+
+      <!-- Persistent "last prompt" (survives popup close/reopen) -->
+      <div id="lastPrompt" class="last-prompt hidden">
+        <div class="last-prompt-head">
+          <span class="last-prompt-title">Last prompt</span>
+          <button id="copyLastPromptBtn" class="btn-inline" type="button">📋 Copy</button>
+        </div>
+        <pre id="lastPromptText" class="last-prompt-text"></pre>
+      </div>
     </main>
     
     <footer>

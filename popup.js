@@ -5,17 +5,65 @@
 
 let currentSnapshot = null;
 
+const STORAGE_KEYS = {
+  LAST_PROMPT: 'rl4_last_prompt_v1'
+};
+
+async function saveLastPrompt(prompt) {
+  const p = String(prompt || '');
+  if (!p) return;
+  // Avoid quota issues if someone enables full transcript and it becomes enormous.
+  if (p.length > 1_500_000) return;
+  await chrome.storage.local.set({ [STORAGE_KEYS.LAST_PROMPT]: p });
+}
+
+async function loadLastPrompt() {
+  const res = await chrome.storage.local.get([STORAGE_KEYS.LAST_PROMPT]);
+  return res && typeof res[STORAGE_KEYS.LAST_PROMPT] === 'string' ? res[STORAGE_KEYS.LAST_PROMPT] : '';
+}
+
+function renderLastPrompt(prompt) {
+  const wrap = document.getElementById('lastPrompt');
+  const textEl = document.getElementById('lastPromptText');
+  if (!wrap || !textEl) return;
+  const p = String(prompt || '').trim();
+  if (!p) {
+    wrap.classList.add('hidden');
+    textEl.textContent = '';
+    return;
+  }
+  textEl.textContent = p;
+  wrap.classList.remove('hidden');
+}
+
 /**
  * Initialize popup UI and event listeners
  */
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   const generateBtn = document.getElementById('generateBtn');
   const viewRawBtn = document.getElementById('viewRawBtn');
   const copyPromptBtn = document.getElementById('copyPromptBtn');
+  const copyLastPromptBtn = document.getElementById('copyLastPromptBtn');
   const ultraEl = document.getElementById('ultraCompress');
   const semanticEl = document.getElementById('semanticHints');
   const includeTranscriptEl = document.getElementById('includeTranscript');
   const integrityEl = document.getElementById('integritySeal');
+
+  // Restore and display last prompt (persisted) so closing the popup doesn't lose it.
+  try {
+    const last = await loadLastPrompt();
+    renderLastPrompt(last);
+  } catch (_) {
+    // ignore
+  }
+
+  copyLastPromptBtn?.addEventListener('click', async (e) => {
+    e.preventDefault();
+    const last = await loadLastPrompt();
+    if (!last) return;
+    await copyToClipboard(last);
+    showStatus('success', '✓ Copied to clipboard.');
+  });
 
   generateBtn.addEventListener('click', generateSnapshot);
   viewRawBtn.addEventListener('click', (e) => {
@@ -140,6 +188,15 @@ async function generateSnapshot() {
 
     // Store for view raw button
     currentSnapshot = snapshot;
+
+    // Persist + show the *exact* last prompt displayed (single slot, overwrites previous)
+    const prompt = buildInjectionPrompt(snapshot);
+    try {
+      await saveLastPrompt(prompt);
+    } catch (_) {
+      // ignore (quota / storage errors)
+    }
+    renderLastPrompt(prompt);
 
     // Update UI
     updateMetadata(snapshot);

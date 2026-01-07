@@ -359,3 +359,67 @@ footer {
   gap: var(--s-2);
 }
 
+/* Persistent last prompt (single item) */
+.last-prompt {
+  padding: var(--s-3);
+  border-radius: var(--radius-card);
+  border: 1px solid rgba(244, 233, 232, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.last-prompt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+}
+
+.last-prompt-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.last-prompt-text {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.82);
+  white-space: pre-wrap;
+  word-break: break-word;
+
+  max-height: 160px;
+  overflow: auto;
+
+  padding: var(--s-2);
+  border-radius: 12px;
+  border: 1px solid var(--border-default);
+  background: rgba(0, 0, 0, 0.20);
+}
+
+.btn-inline {
+  appearance: none;
+  border: 1px solid rgba(244, 233, 232, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.88);
+  border-radius: 12px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+}
+
+.btn-inline:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(244, 233, 232, 0.28);
+  transform: translateY(-1px);
+}
+
+.btn-inline:active {
+  transform: translateY(0);
+}
+
