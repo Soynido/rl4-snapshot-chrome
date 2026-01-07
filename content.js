@@ -583,14 +583,39 @@
       const provider = getProvider();
       if (provider !== 'chatgpt') return [];
 
-      const endpoints = [`/backend-api/conversation/${encodeURIComponent(id)}`];
+      const endpoints = [
+        `/backend-api/conversation/${encodeURIComponent(id)}`,
+        `/backend-api/conversation/${encodeURIComponent(id)}/`,
+        `/backend-api/conversation/${encodeURIComponent(id)}?include=all`,
+        `/backend-api/conversation/${encodeURIComponent(id)}?include_history=true`
+      ];
+
+      // ChatGPT often requires extra headers that the webapp sets (device id / sentinel token).
+      // Best-effort: read from localStorage if present. If missing, we still try.
+      const headers = { Accept: 'application/json' };
+      try {
+        const deviceId =
+          window.localStorage?.getItem?.('oai-device-id') ||
+          window.localStorage?.getItem?.('oai_device_id') ||
+          window.localStorage?.getItem?.('OAI_DEVICE_ID') ||
+          '';
+        if (deviceId) headers['oai-device-id'] = deviceId;
+      } catch (_) {}
+      try {
+        const sentinel =
+          window.localStorage?.getItem?.('openai-sentinel-chat-requirements-token') ||
+          window.localStorage?.getItem?.('OPENAI_SENTINEL_CHAT_REQUIREMENTS_TOKEN') ||
+          '';
+        if (sentinel) headers['openai-sentinel-chat-requirements-token'] = sentinel;
+      } catch (_) {}
+
       for (const ep of endpoints) {
         try {
           const url = `${location.origin}${ep}`;
           log('ChatGPT deep fetch: trying endpoint', { url });
           const res = await fetch(url, {
             credentials: 'include',
-            headers: { Accept: 'application/json' }
+            headers
           });
           if (!res.ok) {
             log('ChatGPT deep fetch: endpoint not ok', { url, status: res.status });
@@ -1604,8 +1629,23 @@
       }
     };
 
+    const selForProvider =
+      provider === 'chatgpt'
+        ? SELECTORS.CHATGPT_MESSAGE_NODES
+        : provider === 'gemini'
+          ? SELECTORS.GEMINI_LOOP
+          : SELECTORS.CLAUDE_MESSAGE_CONTAINERS;
+    const countMsgsIn = (root) => {
+      try {
+        if (!root) return 0;
+        return root.querySelectorAll ? root.querySelectorAll(selForProvider).length : 0;
+      } catch (_) {
+        return 0;
+      }
+    };
+
     let prevH = getScrollHeight();
-    let prevChildCount = scroller ? scroller.childElementCount : document.documentElement.childElementCount;
+    let prevDomMsgCount = countMsgsIn(scroller || document);
     let prevMsgCount = await getStoredCount();
     log('Hydration start', {
       reason,
@@ -1614,7 +1654,7 @@
       scrollerTag: scroller ? scroller.tagName : 'WINDOW',
       scrollerClass: scroller ? scroller.className : '',
       prevH,
-      prevChildCount,
+      prevDomMsgCount,
       prevMsgCount
     });
 
@@ -1649,17 +1689,17 @@
       await scanAndSyncMessages(`${reason}-top`, { append: true });
 
       const nextH = getScrollHeight();
-      const nextChildCount = scroller ? scroller.childElementCount : document.documentElement.childElementCount;
+      const nextDomMsgCount = countMsgsIn(scroller || document);
       const nextMsgCountPromise = getStoredCount();
       const nextMsgCount = await nextMsgCountPromise;
-      const grew = nextMsgCount > prevMsgCount || nextH > prevH + 50 || nextChildCount > prevChildCount;
+      const grew = nextMsgCount > prevMsgCount || nextH > prevH + 50 || nextDomMsgCount > prevDomMsgCount;
       log('Hydration tick', {
         reason,
         scrollTop: getScrollTop(),
         prevH,
         nextH,
-        prevChildCount,
-        nextChildCount,
+        prevDomMsgCount,
+        nextDomMsgCount,
         prevMsgCount,
         nextMsgCount,
         grew,
@@ -1669,13 +1709,13 @@
         log('Hydration chunk loaded', {
           prevH,
           nextH,
-          prevChildCount,
-          nextChildCount,
+          prevDomMsgCount,
+          nextDomMsgCount,
           prevMsgCount,
           nextMsgCount
         });
         prevH = nextH;
-        prevChildCount = nextChildCount;
+        prevDomMsgCount = nextDomMsgCount;
         prevMsgCount = nextMsgCount;
         noGrowth = 0;
       } else {
@@ -1789,7 +1829,9 @@
         }, OBSERVER_DEBOUNCE_MS);
       });
 
-      observer.observe(document.body, {
+      // document.body can be null very early; fallback to document.documentElement.
+      const target = document.body instanceof Node ? document.body : document.documentElement;
+      observer.observe(target, {
         childList: true,
         subtree: true,
         characterData: true
