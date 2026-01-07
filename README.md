@@ -8,6 +8,24 @@ Chrome extension that captures Claude / ChatGPT / Gemini conversations and gener
 
 This repo is a **public-friendly reference implementation** of the RCEP™ payload format. It does not include any IDE / kernel components.
 
+## Why this exists (research-grade framing)
+RCEP™ packages encode *portable cognitive state*:
+- **Topics** (what the session is about)
+- **Decisions** (what was chosen + why, as observable)
+- **Timeline** (macro phases)
+- **Integrity** (checksum + optional seal)
+- **Epistemic honesty** (explicit “unverified semantics” when transcript is omitted)
+
+## Diagrams
+![Architecture layers](docs/diagrams/layers.svg)
+
+## Protocol docs
+- `docs/WHITEPAPER.md` (conceptual + threat model)
+- `docs/SPECIFICATION.md` (normative MUST/SHOULD)
+- `docs/SECURITY_MODEL.md` (what is / isn’t guaranteed)
+- `schemas/` (JSON Schema by profile)
+- `examples/` (example payloads)
+
 ## Installation
 
 1. Open Chrome → `chrome://extensions/`
@@ -22,11 +40,6 @@ This repo is a **public-friendly reference implementation** of the RCEP™ paylo
 3. Check Messages / Compression / Checksum
 4. Click **Copy Prompt to Clipboard**
 5. Paste into any other LLM and continue
-
-## Docs (public)
-- `RCEP_PROTOCOL.md`: RCEP™ payload profiles and fields
-- `ARCHITECTURE_PUBLIC.md`: browser-only architecture & data flow
-- `examples/`: Example RCEP™ payloads (Ultra+, Sealed, Digest)
 
 ## Related repos
 

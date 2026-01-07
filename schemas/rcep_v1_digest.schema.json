@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/rcep_v1_digest.schema.json",
+  "title": "RCEP_v1 Digest",
+  "type": "object",
+  "required": [
+    "_branding",
+    "producer",
+    "protocol",
+    "version",
+    "session_id",
+    "timestamp",
+    "context_state",
+    "topics",
+    "decisions",
+    "insights",
+    "context_summary",
+    "timeline_summary",
+    "conversation_fingerprint",
+    "metadata",
+    "checksum"
+  ],
+  "properties": {
+    "_branding": { "type": "object" },
+    "producer": { "type": "object" },
+    "protocol": { "const": "RCEP_v1" },
+    "version": { "type": "string" },
+    "session_id": { "type": "string" },
+    "timestamp": { "type": "string" },
+    "context_state": { "type": "object" },
+    "topics": { "type": "array" },
+    "decisions": { "type": "array" },
+    "insights": { "type": "array", "items": { "type": "string" } },
+    "context_summary": { "type": "string" },
+    "timeline_summary": { "type": "array" },
+    "conversation_fingerprint": { "type": "object" },
+    "metadata": { "type": "object" },
+    "checksum": { "type": "string" },
+    "transcript_compact": { "type": "string" }
+  },
+  "additionalProperties": true
+}
+
+

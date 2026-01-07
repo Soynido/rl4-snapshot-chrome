@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/signature_device_integrity_v1.schema.json",
+  "title": "RCEP Device-only Integrity Signature (device_integrity_v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "algo", "key_id", "public_key_spki", "signed_payload", "value"],
+  "properties": {
+    "type": { "const": "device_integrity_v1" },
+    "algo": { "const": "ECDSA_P256_SHA256" },
+    "key_id": {
+      "type": "string",
+      "description": "SHA-256 hex fingerprint of the SPKI public key bytes (recommended)."
+    },
+    "public_key_spki": {
+      "type": "string",
+      "description": "Base64-encoded SPKI public key."
+    },
+    "signed_payload": {
+      "type": "string",
+      "pattern": "^checksum:[a-f0-9]{64}$"
+    },
+    "value": {
+      "type": "string",
+      "description": "Base64-encoded ECDSA signature over signed_payload."
+    }
+  }
+}
+
+

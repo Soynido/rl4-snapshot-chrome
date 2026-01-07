@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/rcep_v2_ultra_plus.schema.json",
+  "title": "RCEP_v2_UltraPlus",
+  "type": "object",
+  "required": [
+    "_branding",
+    "producer",
+    "protocol",
+    "session_id",
+    "timestamp",
+    "context_state",
+    "topics",
+    "decisions",
+    "timeline_macro",
+    "context_summary_ultra",
+    "validation_checklist",
+    "unknowns",
+    "semantic_validation",
+    "assumptions_candidates",
+    "conversation_fingerprint",
+    "metadata",
+    "checksum"
+  ],
+  "properties": {
+    "_branding": { "type": "object" },
+    "producer": { "type": "object" },
+    "protocol": { "const": "RCEP_v2_UltraPlus" },
+    "session_id": { "type": "string" },
+    "timestamp": { "type": "string" },
+    "context_state": { "type": "object" },
+    "topics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["label", "weight", "summary"],
+        "properties": {
+          "label": { "type": "string" },
+          "weight": { "type": "number" },
+          "summary": { "type": "string" }
+        }
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "intent", "choice", "rationale"],
+        "properties": {
+          "id": { "type": "string" },
+          "intent": { "type": "string" },
+          "choice": { "type": "string" },
+          "rationale": { "type": "string" }
+        }
+      }
+    },
+    "timeline_macro": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["phase", "range", "summary"],
+        "properties": {
+          "phase": { "type": "string" },
+          "range": { "type": "string" },
+          "summary": { "type": "string" }
+        }
+      }
+    },
+    "context_summary_ultra": { "type": "string" },
+    "validation_checklist": { "type": "array", "items": { "type": "string" } },
+    "unknowns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["term", "reason"],
+        "properties": {
+          "term": { "type": "string" },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "semantic_validation": {
+      "type": "object",
+      "required": ["status", "scope", "reason", "recommended_checks"],
+      "properties": {
+        "status": { "const": "unverified" },
+        "scope": { "const": "structure_only" },
+        "reason": { "type": "string" },
+        "recommended_checks": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+      }
+    },
+    "assumptions_candidates": { "type": "array", "items": { "type": "string" } },
+    "conversation_fingerprint": {
+      "type": "object",
+      "required": ["algorithm", "sha256"],
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "sha256": { "type": "string" }
+      }
+    },
+    "metadata": { "type": "object" },
+    "checksum": { "type": "string" },
+    "signature": { "$ref": "signature_device_integrity_v1.schema.json" }
+  },
+  "additionalProperties": true
+}
+
+
