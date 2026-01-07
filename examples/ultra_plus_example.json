@@ -6,6 +6,12 @@
     "mode": "ultra_plus"
   },
   "protocol": "RCEP_v2_UltraPlus",
+  "producer": {
+    "product": "RL4 Snapshot",
+    "protocol_family": "RCEP™",
+    "generator": "rl4-snapshot-extension",
+    "mode": "ultra_plus"
+  },
   "session_id": "conv-example-2025-01-07T00:00:00.000Z",
   "timestamp": "2025-01-07T00:00:00.000Z",
   "context_state": {
@@ -55,25 +61,22 @@
       "summary": "Keywords: api, endpoints • user:8, assistant:7"
     }
   ],
+  "context_summary_ultra": "Subject: Example Project Planning. Goal: Design → Implement → Validate. Topics: architecture, api, database. Decisions: decide. Timeline: 3 phases.",
+  "validation_checklist": [],
   "semantic_validation": {
     "status": "unverified",
     "scope": "structure_only",
-    "reason": "Ultra+ does not include the full transcript",
+    "reason": "Ultra+ does not include the full transcript; semantic correctness is not validated.",
     "recommended_checks": [
-      "Verify assumptions against original conversation if available",
-      "Check for contradictions in decisions array",
-      "Validate timeline_macro phases match actual conversation flow"
+      "List the hidden assumptions required for the decisions to be correct.",
+      "Find at least 3 counterexamples / contradictions to the implied reasoning.",
+      "State what evidence would change the conclusion (falsifiability)."
     ]
   },
-  "assumptions_candidates": [
-    {
-      "text": "Assuming PostgreSQL version 14+",
-      "source_range": "16-30"
-    }
-  ],
+  "assumptions_candidates": ["Assuming PostgreSQL version 14+"],
   "unknowns": [
-    "env_var_db_host",
-    "deployment_target"
+    { "term": "env_var_db_host", "reason": "Observed token; meaning not defined in Ultra payload." },
+    { "term": "deployment_target", "reason": "Observed token; meaning not defined in Ultra payload." }
   ],
   "conversation_fingerprint": {
     "algorithm": "sha256",

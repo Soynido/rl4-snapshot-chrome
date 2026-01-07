@@ -112,7 +112,7 @@ async function generateSnapshot() {
       throw new Error('No conversation detected. Open a conversation page and try again.');
     }
 
-    // Generate snapshot (digest ultra-compressé)
+    // Generate snapshot (digest / ultra)
     showStatus('loading', `Generating snapshot from ${messages.length} messages...`);
     
     const outputMode = ultraCompress ? (semanticHints ? 'ultra_plus' : 'ultra') : 'digest';

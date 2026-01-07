@@ -1,16 +1,16 @@
 /**
- * RL4 Forensic Scraper - Script de scraping complet pour extraire toute la conversation
- * 
- * UTILISATION:
- * 1. Ouvre la page partagée Claude.ai (ex: https://claude.ai/share/...)
- * 2. Ouvre la Console DevTools (F12)
- * 3. Colle ce script entier dans la console
- * 4. Appuie sur Entrée
- * 5. Le JSON complet sera copié dans ton presse-papier
+ * RL4 Forensic Scraper — Extract a full conversation from shared pages
+ *
+ * USAGE:
+ * 1. Open a shared Claude.ai page (e.g. https://claude.ai/share/...)
+ * 2. Open DevTools Console (F12)
+ * 3. Paste this entire script into the console
+ * 4. Press Enter
+ * 5. The extracted JSON will be copied to your clipboard (best effort)
  */
 
 (async function() {
-  console.log('[RL4] 🔍 Forensic Scraper démarré...');
+  console.log('[RL4] Forensic Scraper started...');
   
   const shareId = window.location.pathname.split('/')[2] || '';
   const isShare = window.location.pathname.startsWith('/share/');
@@ -22,7 +22,7 @@
   let jsonData = null;
   let successfulEndpoint = null;
   
-  // Méthode 1: Fetch direct de l'API (MEILLEURE MÉTHODE)
+  // Method 1: direct API fetch (best)
   if (isShare && shareId) {
     const endpoints = [
       `/api/chat_snapshots/${shareId}?rendering_mode=messages&render_all_tools=true`,
@@ -36,7 +36,7 @@
     
     for (const endpoint of endpoints) {
       try {
-        console.log('[RL4] 🔄 Tentative:', endpoint);
+        console.log('[RL4] Trying:', endpoint);
         
         // Essayer avec credentials
         let res = await fetch(endpoint, { 
@@ -55,10 +55,10 @@
         if (res.ok) {
           jsonData = await res.json();
           successfulEndpoint = endpoint;
-          console.log('[RL4] ✅ Succès! Structure:', Object.keys(jsonData));
-          console.log('[RL4] 📊 Taille JSON:', JSON.stringify(jsonData).length, 'caractères');
+          console.log('[RL4] Success. Top-level keys:', Object.keys(jsonData));
+          console.log('[RL4] JSON size:', JSON.stringify(jsonData).length, 'chars');
           
-          // Extraction agressive récursive
+          // Aggressive recursive extraction
           const extractMessages = (obj, depth = 0, path = '') => {
             if (depth > 10) return [];
             const found = [];
@@ -69,11 +69,11 @@
                 const item = obj[i];
                 if (!item || typeof item !== 'object') continue;
                 
-                // Détecter un message
+                // Detect a message-like object
                 const role = String(item.role || item.sender || item.type || '').toLowerCase();
                 let content = '';
                 
-                // Claude.ai format: content peut être array de blocks { type: "text", text: "..." }
+                // Claude.ai format: content can be an array of blocks { type: "text", text: "..." }
                 if (Array.isArray(item.content)) {
                   content = item.content
                     .map(block => {
@@ -95,12 +95,12 @@
                   content = typeof item.message === 'string' ? item.message : JSON.stringify(item.message);
                 }
                 
-                // Normaliser le role
+                // Normalize role
                 let normalizedRole = null;
                 if (role === 'user' || role === 'human') normalizedRole = 'user';
                 else if (role === 'assistant' || role === 'claude' || role === 'ai') normalizedRole = 'assistant';
                 
-                // Si on a un role valide et du contenu, c'est un message
+                // If role + content look valid, treat as a message
                 if (normalizedRole && content && content.trim().length > 0) {
                   found.push({
                     role: normalizedRole,
@@ -110,25 +110,25 @@
                   });
                 }
                 
-                // Continuer la récursion
+                // Continue recursion
                 found.push(...extractMessages(item, depth + 1, `${path}[${i}]`));
               }
             } 
-            // Si c'est un objet, chercher des clés communes
+            // If object, scan common keys
             else if (typeof obj === 'object' && obj !== null) {
-              // Clés prioritaires (structures Claude.ai communes)
+              // Priority keys (common Claude.ai shapes)
               const priorityKeys = ['messages', 'chat_messages', 'conversation', 'items', 'chat', 'data', 'content'];
               
               for (const key of priorityKeys) {
                 if (obj[key] && Array.isArray(obj[key])) {
-                  console.log(`[RL4] 📦 Trouvé structure: ${key} (${obj[key].length} items)`);
+                  console.log(`[RL4] Found array: ${key} (${obj[key].length} items)`);
                   found.push(...extractMessages(obj[key], depth + 1, `${path}.${key}`));
                 }
               }
               
-              // Parcourir toutes les clés pour trouver des arrays cachés
+              // Scan all keys for nested arrays/objects
               for (const [k, v] of Object.entries(obj)) {
-                if (priorityKeys.includes(k)) continue; // déjà traité
+                if (priorityKeys.includes(k)) continue; // already handled
                 if (Array.isArray(v)) {
                   found.push(...extractMessages(v, depth + 1, `${path}.${k}`));
                 } else if (v && typeof v === 'object') {
@@ -142,7 +142,7 @@
           
           messages = extractMessages(jsonData);
           
-          // Dédupliquer par contenu
+          // De-dup by content
           const seen = new Set();
           const unique = [];
           for (const msg of messages) {
@@ -165,9 +165,9 @@
     }
   }
   
-  // Méthode 2: DOM scraping si API échoue
+  // Method 2: DOM scraping fallback (if API fails)
   if (messages.length === 0) {
-    console.log('[RL4] ⚠️ API échouée, fallback: DOM scraping...');
+    console.log('[RL4] API failed, falling back to DOM scraping...');
     
     // Scroll pour charger tout le contenu
     const originalScroll = window.scrollY;
@@ -191,7 +191,7 @@
       nodes.push(...found);
     }
     
-    console.log('[RL4] 📄 Nodes DOM trouvés:', nodes.length);
+    console.log('[RL4] DOM nodes found:', nodes.length);
     
     for (const node of nodes) {
       const text = (node.innerText || node.textContent || '').trim();
@@ -218,9 +218,9 @@
     window.scrollTo(0, originalScroll);
   }
   
-  // Méthode 3: IndexedDB / LocalStorage (dernier recours)
+  // Method 3: IndexedDB / LocalStorage (last resort)
   if (messages.length === 0) {
-    console.log('[RL4] ⚠️ DOM échoué, tentative IndexedDB/LocalStorage...');
+    console.log('[RL4] DOM scrape failed, trying IndexedDB/LocalStorage...');
     
     try {
       // Chercher dans localStorage
@@ -233,7 +233,7 @@
               const extracted = extractMessages(val);
               if (extracted.length > 0) {
                 messages.push(...extracted);
-                console.log('[RL4] ✅ Messages trouvés dans localStorage:', key);
+                console.log('[RL4] Found messages in localStorage:', key);
               }
             }
           } catch (_) {}

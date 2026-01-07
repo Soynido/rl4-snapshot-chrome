@@ -15,7 +15,7 @@ This repo is a **public-friendly reference implementation** of the RCEP™ paylo
 3. Click **Load unpacked**
 4. Select the `rl4-snapshot-extension` folder
 
-## Utilisation
+## Usage
 
 1. Open a conversation on Claude / ChatGPT / Gemini
 2. Click **Generate Context**
@@ -30,8 +30,7 @@ This repo is a **public-friendly reference implementation** of the RCEP™ paylo
 
 ## Related repos
 
-- **[RCEP-Protocol](https://github.com/Soynido/RCEP-Protocol)**: The RCEP™ specification repository (spec + examples)  
-  This extension is the **reference implementation** of that protocol.
+- **[RCEP-Protocol](https://github.com/Soynido/RCEP-Protocol)**: RCEP™ spec + examples + reference implementation.
 
 ## Notes
 

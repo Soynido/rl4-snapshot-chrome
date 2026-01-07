@@ -1,86 +1,69 @@
-# 🔍 Guide de Scraping Complet - RL4 Extension
+# Scraping Guide (Troubleshooting) — RL4 Snapshot Extension
 
-## Problème : L'extension ne capture qu'un seul message
-
-Si tu vois `total_messages: 1` dans ton snapshot, utilise ce guide pour extraire **TOUTE** la conversation.
+This guide helps you debug cases where the extension captures too few messages (e.g. `total_messages: 1`).
 
 ---
 
-## 🚀 Méthode 1 : Script Forensic (RECOMMANDÉ)
+## Method 1: Forensic Script (Recommended)
 
-### Étapes :
+### Steps
 
-1. **Ouvre la page partagée Claude.ai**
-   - Exemple : `https://claude.ai/share/c61ff0f2-6511-4d93-b03e-9d2bb222c1fe`
+1. **Open a shared Claude.ai page**
+   - Example: `https://claude.ai/share/<share-id>`
 
-2. **Ouvre la Console DevTools**
-   - Appuie sur `F12` ou `Cmd+Option+I` (Mac) / `Ctrl+Shift+I` (Windows/Linux)
-   - Va dans l'onglet **Console**
+2. **Open DevTools Console**
+   - `F12` or `Cmd+Option+I` (macOS) / `Ctrl+Shift+I` (Windows/Linux)
+   - Go to the **Console** tab
 
-3. **Colle le script complet**
-   - Ouvre le fichier `forensic-scraper.js`
-   - Copie **TOUT** le contenu
-   - Colle-le dans la console
-   - Appuie sur **Entrée**
+3. **Paste the full script**
+   - Open `forensic-scraper.js`
+   - Copy the entire file content
+   - Paste into the console and press **Enter**
 
-4. **Récupère le JSON**
-   - Le script va automatiquement copier le JSON dans ton presse-papier
-   - Si ça ne marche pas, le JSON sera affiché dans la console (copie-le manuellement)
+4. **Get the JSON**
+   - The script attempts to copy the JSON to your clipboard
+   - If clipboard copy fails, the JSON is printed in the console
 
-5. **Utilise le JSON**
-   - Colle-le dans un fichier `.json`
-   - Ou envoie-le directement pour générer un snapshot RL4
-
----
-
-## 🔧 Méthode 2 : Inspection Réseau (Manuel)
-
-### Étapes :
-
-1. **Ouvre DevTools** → Onglet **Network** (Réseau)
-
-2. **Recharge la page** (`Cmd+R` / `Ctrl+R`)
-
-3. **Cherche les requêtes API**
-   - Filtre par `XHR` ou `Fetch`
-   - Cherche des URLs contenant :
-     - `/api/chat_snapshots/`
-     - `/api/shares/`
-     - `/backend-api/`
-
-4. **Clique sur la requête** → Onglet **Response**
-   - Copie le JSON complet
-
-5. **Extrais les messages**
-   - Le JSON contient généralement un array `messages` ou `chat_messages`
-   - Chaque message a `role` (`user`/`assistant`) et `content`
+5. **Use the JSON**
+   - Save it to a `.json` file
+   - Or feed it into your snapshot workflow
 
 ---
 
-## 🛠️ Méthode 3 : Application Tab (IndexedDB)
+## Method 2: Network Inspection (Manual)
 
-### Étapes :
+### Steps
 
-1. **Ouvre DevTools** → Onglet **Application** (ou **Stockage**)
-
-2. **IndexedDB** → Cherche des bases de données Claude.ai
-   - Nom typique : `claude-*` ou `anthropic-*`
-
-3. **Explore les stores**
-   - Cherche des stores contenant `messages`, `conversations`, `chat`
-
-4. **Exporte les données**
-   - Clic droit → Export ou copie manuelle
+1. Open DevTools → **Network**
+2. Reload the page (`Cmd+R` / `Ctrl+R`)
+3. Filter requests by **Fetch/XHR**
+4. Look for endpoints like:
+   - `/api/chat_snapshots/`
+   - `/api/shares/`
+   - `/backend-api/`
+5. Open a request → **Response** and copy the full JSON
+6. Extract messages from arrays like `messages` or `chat_messages` (fields typically include `role` and `content`)
 
 ---
 
-## 📋 Format de Sortie Attendu
+## Method 3: Application tab (IndexedDB) — Advanced
 
-Le script forensic génère un JSON avec cette structure :
+### Steps
+
+1. Open DevTools → **Application**
+2. Look under **IndexedDB** for Claude/Anthropic databases (often `claude-*` / `anthropic-*`)
+3. Inspect stores that look like `messages`, `conversations`, `chat`
+4. Export or copy data manually
+
+---
+
+## Expected output format
+
+The forensic script outputs a JSON object like:
 
 ```json
 {
-  "share_id": "c61ff0f2-6511-4d93-b03e-9d2bb222c1fe",
+  "share_id": "<share-id>",
   "url": "https://claude.ai/share/...",
   "extracted_at": "2026-01-06T21:46:29.078Z",
   "extraction_method": "api",
@@ -90,13 +73,13 @@ Le script forensic génère un JSON avec cette structure :
     {
       "id": "msg-1",
       "role": "user",
-      "content": "Premier message...",
+      "content": "First message...",
       "timestamp": "2026-01-06T..."
     },
     {
       "id": "msg-2",
       "role": "assistant",
-      "content": "Réponse de Claude...",
+      "content": "Claude response...",
       "timestamp": "2026-01-06T..."
     }
   ]
@@ -105,64 +88,28 @@ Le script forensic génère un JSON avec cette structure :
 
 ---
 
-## ⚠️ Dépannage
+## Troubleshooting
 
-### Le script ne trouve aucun message
+### The script finds zero messages
 
-1. **Vérifie que tu es sur une page `/share/`**
-   - L'URL doit contenir `/share/` suivi d'un UUID
+1. Make sure you are on a `/share/` page
+2. Check the console for errors (look for `[RL4]` logs)
+3. Reload the page (content may not be hydrated yet)
+4. Ensure requests to `claude.ai/api/` are allowed
 
-2. **Vérifie la console pour les erreurs**
-   - Le script affiche des logs détaillés
-   - Cherche les messages `[RL4]`
+### The script finds messages but the extension does not
 
-3. **Essaie de recharger la page**
-   - Parfois le contenu n'est pas encore chargé
-
-4. **Vérifie les permissions**
-   - Le script doit pouvoir faire des `fetch()` vers `claude.ai/api/`
-
-### Le script trouve des messages mais l'extension ne les capture pas
-
-1. **Recharge l'extension**
-   - Va dans `chrome://extensions/`
-   - Clique sur "Recharger" sur l'extension RL4
-
-2. **Recharge la page Claude.ai**
-   - `Cmd+R` / `Ctrl+R`
-
-3. **Vérifie les logs de l'extension**
-   - Ouvre la Console DevTools
-   - Cherche les messages `[RL4]`
-
-4. **Utilise le script forensic directement**
-   - C'est la méthode la plus fiable pour extraire toute la conversation
+1. Reload the extension (`chrome://extensions/` → **Reload**)
+2. Reload the page (`Cmd+R` / `Ctrl+R`)
+3. Check extension logs in DevTools console (look for `[RL4]`)
+4. Use the forensic script as a fallback (most reliable for shared pages)
 
 ---
 
-## 🎯 Prochaines Étapes
+## Next steps
 
-Une fois que tu as le JSON complet :
-
-1. **Génère un snapshot RL4**
-   - Utilise le JSON pour créer un snapshot structuré
-   - Le snapshot inclura `topics`, `decisions`, `insights`, `checksum`
-
-2. **Réinjecte dans Claude**
-   - Colle le snapshot dans une nouvelle conversation
-   - Claude pourra reconstruire toute la cognition/mémoire
-
-3. **Partage le snapshot**
-   - Le snapshot est portable et vérifiable (checksum SHA-256)
-   - Tu peux le partager avec d'autres LLMs (OpenAI, Perplexity, etc.)
-
----
-
-## 📞 Support
-
-Si rien ne fonctionne :
-
-1. Partage le JSON de sortie du script forensic
-2. Partage les logs de la console (`[RL4]`)
-3. Partage l'URL de la page partagée
+Once you have the full JSON:
+1. Generate an RCEP snapshot with the extension
+2. Paste it into any other LLM to continue
+3. Share the snapshot (portable + integrity-checked)
 

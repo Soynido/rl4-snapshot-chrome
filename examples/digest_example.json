@@ -7,6 +7,12 @@
   },
   "protocol": "RCEP_v1",
   "version": "0.3.0-digest",
+  "producer": {
+    "product": "RL4 Snapshot",
+    "protocol_family": "RCEP™",
+    "generator": "rl4-snapshot-extension",
+    "mode": "digest"
+  },
   "session_id": "conv-digest-2025-01-07T00:00:00.000Z",
   "timestamp": "2025-01-07T00:00:00.000Z",
   "context_state": {

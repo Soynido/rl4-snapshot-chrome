@@ -6,6 +6,12 @@
     "mode": "ultra_plus"
   },
   "protocol": "RCEP_v2_UltraPlus",
+  "producer": {
+    "product": "RL4 Snapshot",
+    "protocol_family": "RCEP™",
+    "generator": "rl4-snapshot-extension",
+    "mode": "ultra_plus"
+  },
   "session_id": "conv-sealed-2025-01-07T00:00:00.000Z",
   "timestamp": "2025-01-07T00:00:00.000Z",
   "context_state": {
@@ -55,22 +61,19 @@
       "summary": "Keywords: liability, recommendation • user:6, assistant:6"
     }
   ],
+  "context_summary_ultra": "Subject: Legal Document Review. Goal: Review → Analyze → Recommend. Topics: contract, clause, liability. Decisions: decide. Timeline: 3 phases.",
+  "validation_checklist": [],
   "semantic_validation": {
     "status": "unverified",
     "scope": "structure_only",
-    "reason": "Ultra+ does not include the full transcript",
+    "reason": "Ultra+ does not include the full transcript; semantic correctness is not validated.",
     "recommended_checks": [
-      "Verify legal assumptions against original document",
-      "Cross-check decisions with jurisdiction requirements",
-      "Validate timeline matches actual review process"
+      "List the hidden assumptions required for the decisions to be correct.",
+      "Find at least 3 counterexamples / contradictions to the implied reasoning.",
+      "State what evidence would change the conclusion (falsifiability)."
     ]
   },
-  "assumptions_candidates": [
-    {
-      "text": "Assuming French law jurisdiction",
-      "source_range": "1-12"
-    }
-  ],
+  "assumptions_candidates": ["Assuming French law jurisdiction"],
   "unknowns": [],
   "conversation_fingerprint": {
     "algorithm": "sha256",
