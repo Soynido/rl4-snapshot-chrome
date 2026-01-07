@@ -6,6 +6,11 @@
   --bg-surface: rgba(255, 255, 255, 0.03);
   --bg-surface-hover: rgba(255, 255, 255, 0.06);
 
+  /* Brand */
+  --brand-pink: #F4E9E8;
+  --brand-ink: #121012;
+  --brand-rose: rgba(244, 233, 232, 0.22);
+
   /* Borders */
   --border-default: rgba(255, 255, 255, 0.08);
   --border-hover: rgba(255, 255, 255, 0.15);
@@ -17,9 +22,10 @@
   --text-muted: rgba(255, 255, 255, 0.4);
   --text-disabled: rgba(255, 255, 255, 0.25);
 
-  /* Accents */
-  --cta-gradient: linear-gradient(135deg, #a855f7, #7b5dff, #6366f1);
-  --cta-shadow: 0 18px 45px rgba(104, 94, 255, 0.28);
+  /* Accents (logo-aligned: soft rose on dark) */
+  --cta-gradient: linear-gradient(135deg, #F4E9E8, #E7CDCB, #D9B1AE);
+  --cta-shadow: 0 18px 45px rgba(244, 233, 232, 0.16);
+  --focus-ring: rgba(244, 233, 232, 0.22);
 
   /* Status */
   --success-gradient: linear-gradient(135deg, #10b981, #34d399);
@@ -51,8 +57,9 @@ body {
   margin: 0;
   padding: 18px;
   font-family: var(--font-sans);
-  background: radial-gradient(1200px 600px at -20% -10%, rgba(168, 85, 247, 0.25), transparent 60%),
-    radial-gradient(900px 600px at 120% 20%, rgba(99, 102, 241, 0.25), transparent 55%),
+  background:
+    radial-gradient(900px 540px at -18% -12%, rgba(244, 233, 232, 0.22), transparent 60%),
+    radial-gradient(780px 540px at 120% 20%, rgba(244, 233, 232, 0.14), transparent 55%),
     var(--bg-primary);
   color: var(--text-primary);
 }
@@ -62,8 +69,8 @@ body {
   flex-direction: column;
   gap: 14px;
   border-radius: var(--radius-frame);
-  border: 1px solid var(--border-hover);
-  background: linear-gradient(180deg, rgba(9, 6, 19, 0.95), rgba(9, 6, 19, 0.82));
+  border: 1px solid rgba(244, 233, 232, 0.14);
+  background: linear-gradient(180deg, rgba(9, 6, 19, 0.96), rgba(9, 6, 19, 0.82));
   box-shadow: 0 25px 80px rgba(0, 0, 0, 0.65);
   overflow: hidden;
   padding: 16px;
@@ -88,8 +95,8 @@ header {
   flex-shrink: 0;
   border-radius: 14px;
   /* Brand background (requested) */
-  background: #F4E9E8;
-  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: var(--brand-pink);
+  border: 1px solid rgba(0, 0, 0, 0.10);
   box-shadow:
     0 14px 30px rgba(0, 0, 0, 0.45),
     0 0 0 1px rgba(0, 0, 0, 0.10) inset;
@@ -121,10 +128,7 @@ header h1 {
   font-size: 18px;
   font-weight: 700;
   letter-spacing: 0.2px;
-  background: var(--cta-gradient);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: rgba(255, 255, 255, 0.96);
   margin: 0;
   line-height: 1.2;
 }
@@ -133,6 +137,11 @@ header h1 {
   font-size: 12px;
   color: var(--text-secondary);
   line-height: 1.35;
+}
+
+.subtitle b,
+.subtitle strong {
+  color: rgba(255, 255, 255, 0.86);
 }
 
 .field {
@@ -166,7 +175,7 @@ header h1 {
 .input:focus {
   border-color: var(--border-active);
   background: rgba(255, 255, 255, 0.05);
-  box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.18);
+  box-shadow: 0 0 0 3px var(--focus-ring);
  }
 
 .checkbox {
@@ -177,6 +186,17 @@ header h1 {
   color: var(--text-secondary);
   user-select: none;
  }
+
+.checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--brand-pink);
+}
+
+.checkbox span strong {
+  color: rgba(255, 255, 255, 0.92);
+  font-weight: 700;
+}
 
 .checkbox.is-disabled {
   opacity: 0.55;
@@ -190,8 +210,8 @@ main {
 
 .btn-primary {
   background: var(--cta-gradient);
-  color: #0b0614;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--brand-ink);
+  border: 1px solid rgba(0, 0, 0, 0.08);
   padding: 12px 16px;
   border-radius: var(--radius-button);
   font-size: 13px;
@@ -260,7 +280,7 @@ main {
   padding: 16px;
   background: rgba(255, 255, 255, 0.03);
   border-radius: var(--radius-card);
-  border: 1px solid var(--border-default);
+  border: 1px solid rgba(244, 233, 232, 0.12);
   backdrop-filter: blur(10px);
 }
 
@@ -292,7 +312,7 @@ main {
 footer {
   text-align: center;
   padding-top: 8px;
-  border-top: 1px solid var(--border-default);
+  border-top: 1px solid rgba(244, 233, 232, 0.10);
 }
 
 .link-subtle {
