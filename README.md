@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/logo.svg" alt="RL4 Logo" width="200" />
+  <img src="assets/logo.png" alt="RL4 Logo" width="200" />
   <h1>RL4 Snapshot Extension (Chrome)</h1>
   <p><strong>RCEP™ Reference Implementation</strong></p>
 </div>
