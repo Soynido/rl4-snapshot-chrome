@@ -41,6 +41,7 @@
       "id": "dec-1",
       "intent": "decide",
       "choice": "Use PostgreSQL over MySQL for better JSON support",
+      "choice_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
       "rationale": "Decision detected"
     }
   ],
@@ -74,6 +75,19 @@
     ]
   },
   "assumptions_candidates": ["Assuming PostgreSQL version 14+"],
+  "semantic_spine": {
+    "core_context": "Subject: Example Project Planning. Goal: Design → Implement → Validate. Topics: architecture, api, database. Decisions: decide. Timeline: 3 phases.",
+    "main_tension": "UNKNOWN",
+    "key_decision": {
+      "statement": "Use PostgreSQL over MySQL for better JSON support",
+      "why": "Decision detected",
+      "choice_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "falsify_if": "UNKNOWN"
+    },
+    "assumptions": ["Assuming PostgreSQL version 14+"],
+    "rejected_alternatives": [],
+    "open_questions": []
+  },
   "unknowns": [
     { "term": "env_var_db_host", "reason": "Observed token; meaning not defined in Ultra payload." },
     { "term": "deployment_target", "reason": "Observed token; meaning not defined in Ultra payload." }

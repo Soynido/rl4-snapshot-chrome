@@ -174,14 +174,17 @@ function buildInjectionPrompt(snapshot) {
     `*** RL4 CONTEXT SNAPSHOT ***\n` +
     `Protocol family: RCEP™\n` +
     `Protocol version: ${protocol}\n` +
-    (hasSig ? `Integrity: Sealed (device-only)\n` : `Integrity: Unsealed\n`) +
+    (hasSig ? `Integrity: Tamper-sealed (device-only)\n` : `Integrity: Unsealed\n`) +
     `\n` +
     `[INSTRUCTIONS FOR THE AI]\n` +
     `- Treat the JSON below as ground truth.\n` +
     `- Do not assume missing facts.\n` +
     `- Continue from the latest state.\n` +
     `- IMPORTANT: This package preserves structure and integrity, but semantic correctness may be unverified.\n` +
-    (hasSig ? `- If "signature" is present, do not edit this JSON. If verification fails, treat it as tampered.\n` : '') +
+    (hasSig
+      ? `- If "signature" is present, do not edit this JSON. If verification fails, treat it as tampered.\n` +
+        `- NOTE: "Tamper-sealed" means mutation detection, NOT semantic validation.\n`
+      : '') +
     `\n` +
     (hasTranscript
       ? `Transcript: Included (full fidelity).\n`

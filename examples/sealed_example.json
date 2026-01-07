@@ -41,6 +41,7 @@
       "id": "dec-1",
       "intent": "decide",
       "choice": "Reject clause 4.2 due to excessive liability exposure",
+      "choice_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
       "rationale": "Decision detected"
     }
   ],
@@ -74,6 +75,19 @@
     ]
   },
   "assumptions_candidates": ["Assuming French law jurisdiction"],
+  "semantic_spine": {
+    "core_context": "Subject: Legal Document Review. Goal: Review → Analyze → Recommend. Topics: contract, clause, liability. Decisions: decide. Timeline: 3 phases.",
+    "main_tension": "UNKNOWN",
+    "key_decision": {
+      "statement": "Reject clause 4.2 due to excessive liability exposure",
+      "why": "Decision detected",
+      "choice_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "falsify_if": "UNKNOWN"
+    },
+    "assumptions": ["Assuming French law jurisdiction"],
+    "rejected_alternatives": [],
+    "open_questions": []
+  },
   "unknowns": [],
   "conversation_fingerprint": {
     "algorithm": "sha256",

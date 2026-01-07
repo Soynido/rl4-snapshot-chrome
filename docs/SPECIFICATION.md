@@ -36,6 +36,13 @@ If `protocol` is `RCEP_v2_UltraPlus`, the payload MUST include:
   - `scope` = `structure_only`
   - `reason` describing lack of transcript
   - `recommended_checks` (array of strings, min 1)
+- `semantic_spine` (hybrid layer) with:
+  - `core_context` (string)
+  - `main_tension` (string or `UNKNOWN`)
+  - `key_decision` (object with `statement`, `why`, `choice_sha256`, `falsify_if`)
+  - `assumptions` (array of strings)
+  - `rejected_alternatives` (array of strings)
+  - `open_questions` (array of strings)
 
 ## 5. Device-only Integrity Seal (MAY)
 If a payload includes `signature`:
@@ -48,6 +55,12 @@ If a payload includes `signature`:
 `unknowns` MUST be an array of objects:
 - `term` (string)
 - `reason` (string)
+
+## 7. Decision choice hashing (Ultra / UltraPlus)
+To avoid truncation destroying actionability while keeping payloads small:
+- Ultra/UltraPlus decisions SHOULD include:
+  - `choice` (bounded excerpt)
+  - `choice_sha256` (SHA-256 of the full, untruncated choice text from the source digest)
 
 ## 7. Reference JSON Schemas
 See the `schemas/` directory:

@@ -40,11 +40,12 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "intent", "choice", "rationale"],
+        "required": ["id", "intent", "choice", "choice_sha256", "rationale"],
         "properties": {
           "id": { "type": "string" },
           "intent": { "type": "string" },
           "choice": { "type": "string" },
+          "choice_sha256": { "type": "string" },
           "rationale": { "type": "string" }
         }
       }

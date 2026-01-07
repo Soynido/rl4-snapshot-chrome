@@ -45,11 +45,12 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "intent", "choice", "rationale"],
+        "required": ["id", "intent", "choice", "choice_sha256", "rationale"],
         "properties": {
           "id": { "type": "string" },
           "intent": { "type": "string" },
           "choice": { "type": "string" },
+          "choice_sha256": { "type": "string" },
           "rationale": { "type": "string" }
         }
       }
@@ -90,6 +91,27 @@
       }
     },
     "assumptions_candidates": { "type": "array", "items": { "type": "string" } },
+    "semantic_spine": {
+      "type": "object",
+      "required": ["core_context", "main_tension", "key_decision", "assumptions", "rejected_alternatives", "open_questions"],
+      "properties": {
+        "core_context": { "type": "string" },
+        "main_tension": { "type": "string" },
+        "key_decision": {
+          "type": "object",
+          "required": ["statement", "why", "choice_sha256", "falsify_if"],
+          "properties": {
+            "statement": { "type": "string" },
+            "why": { "type": "string" },
+            "choice_sha256": { "type": "string" },
+            "falsify_if": { "type": "string" }
+          }
+        },
+        "assumptions": { "type": "array", "items": { "type": "string" } },
+        "rejected_alternatives": { "type": "array", "items": { "type": "string" } },
+        "open_questions": { "type": "array", "items": { "type": "string" } }
+      }
+    },
     "conversation_fingerprint": {
       "type": "object",
       "required": ["algorithm", "sha256"],

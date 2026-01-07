@@ -13,6 +13,10 @@ RCEP™ prioritizes:
 - **Integrity**: cryptographic checksum and optional device-only sealing.
 - **Epistemic honesty**: explicit “unverified semantics” when transcript is omitted.
 
+Important nuance:
+- **Lossless semantics are NOT guaranteed** in Ultra/UltraPlus profiles (by design).
+- Full semantic fidelity requires including the transcript (Digest profile with `transcript_compact`).
+
 ## Problem statement
 Typical LLM sessions suffer from:
 - **Amnesia**: model context resets between sessions/tools.
