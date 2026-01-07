@@ -795,9 +795,18 @@ async function generateSnapshot() {
         setLastPromptExpanded(false);
 
         const msgCount = snap.metadata?.messages || snap.metadata?.total_messages || 0;
+        const provider = String(snap.metadata?.capture_provider || '').toLowerCase();
+        const strategy = String(snap.metadata?.capture_strategy || '').toLowerCase();
+        const completeness = String(snap.metadata?.capture_completeness || '').toLowerCase();
+        const partialHint =
+          completeness === 'partial'
+            ? '\n\nNOTE: Capture may be partial (API pagination signaled more history).'
+            : (provider === 'chatgpt' || provider === 'claude') && strategy === 'dom'
+              ? '\n\nNOTE: Capture may be partial on this provider (virtualized history).'
+              : '';
     showStatus(
       'success',
-          `Step 1/ Done.\n\nMessages: ${msgCount}\nChecksum: ${String(snap.checksum || '').substring(0, 16)}...\n\nStep 2/ Create the finalization prompt.`
+          `Step 1/ Done.\n\nMessages: ${msgCount}\nChecksum: ${String(snap.checksum || '').substring(0, 16)}...\n\nStep 2/ Create the finalization prompt.${partialHint}`
         );
         setBusy(false);
         refreshGuidance().catch(() => {});

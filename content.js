@@ -24,7 +24,8 @@
     LAST_SNAPSHOT: 'rl4_last_snapshot_v1',
     // RL4 Blocks Encoder capture (semi-assisted workflow)
     RL4_BLOCKS: 'rl4_blocks_v1',
-    RL4_BLOCKS_STATUS: 'rl4_blocks_status_v1'
+    RL4_BLOCKS_STATUS: 'rl4_blocks_status_v1',
+    CLAUDE_LAST_MESSAGES_URL: 'rl4_claude_last_messages_url_v1'
   };
 
   const SELECTORS = {
@@ -373,6 +374,8 @@
     const provider = getProvider();
     const outputMode = options && typeof options.outputMode === 'string' ? options.outputMode : 'digest';
     const wantsSeal = !!(options && options.wantsIntegritySeal);
+    let claudeCompleteness = 'unknown';
+    let claudeApiUrl = '';
 
     // Guardrail: never include transcript in ultra modes, and auto-disable for huge chats.
     let includeTranscript = !!(options && options.includeTranscript);
@@ -414,25 +417,71 @@
           } else {
             // Fallbacks: embedded state + page-context request
             jobStrategy = 'dom';
-          const embedded = await tryExtractChatGPTEmbeddedState();
-          if (!embedded || !embedded.length) {
-            await requestChatGPTConversationViaPageContext(convId);
-            const started = Date.now();
-            const before = Array.isArray(apiMessagesCache) ? apiMessagesCache.length : 0;
-            while (Date.now() - started < 12000) {
-              const nowLen = Array.isArray(apiMessagesCache) ? apiMessagesCache.length : 0;
-              if (nowLen > before + 50) break;
-              await new Promise((r) => setTimeout(r, 250));
+            const embedded = await tryExtractChatGPTEmbeddedState();
+            if (embedded && embedded.length) {
+              jobStrategy = 'chatgpt_embedded';
+            } else {
+              await requestChatGPTConversationViaPageContext(convId);
+              // Wait for the page-context interceptor to populate apiMessagesCache (can be many chunks).
+              const started = Date.now();
+              let lastLen = Array.isArray(apiMessagesCache) ? apiMessagesCache.length : 0;
+              let stableFor = 0;
+              while (Date.now() - started < 20_000) {
+                await new Promise((r) => setTimeout(r, 300));
+                const nowLen = Array.isArray(apiMessagesCache) ? apiMessagesCache.length : 0;
+                if (nowLen > lastLen) {
+                  lastLen = nowLen;
+                  stableFor = 0;
+                } else {
+                  stableFor += 300;
+                }
+                // Consider done if no growth for ~1.5s and we have something.
+                if (nowLen > 0 && stableFor >= 1500) break;
+              }
+              if (Array.isArray(apiMessagesCache) && apiMessagesCache.length) {
+                jobStrategy = 'chatgpt_page_api';
+              }
             }
-          }
           }
         } else {
           jobStrategy = 'dom';
         }
 
-        // Hydrate reverse-infinite-scroll UIs for Gemini + ChatGPT + Claude.
+        // Claude: try API-first fetch (pagination) to avoid virtualization limits.
+        if (provider === 'claude') {
+          try {
+            const convId = getConversationIdFromUrl();
+            const apiRes = await tryFetchClaudeConversationViaApi(convId);
+            if (apiRes && Array.isArray(apiRes.messages) && apiRes.messages.length) {
+              jobStrategy = 'claude_api';
+              claudeCompleteness = typeof apiRes.completeness === 'string' ? apiRes.completeness : 'unknown';
+              claudeApiUrl = typeof apiRes.usedUrl === 'string' ? apiRes.usedUrl : '';
+              const sessionId = await ensureSessionId();
+              const nowIso = new Date().toISOString();
+              apiMessagesCache = apiRes.messages.map((m, idx) => ({
+                id: `msg-${idx + 1}`,
+                role: m && (m.role === 'user' || m.role === 'assistant') ? m.role : null,
+                content: String(m && m.content ? m.content : ''),
+                timestamp: m && typeof m.timestamp === 'string' ? m.timestamp : nowIso,
+                session_id: sessionId,
+                captured_at: Date.now(),
+                source: 'claude_api',
+                source_url: claudeApiUrl
+              }));
+            }
+          } catch (_) {
+            // ignore
+          }
+        }
+
+        // Hydrate reverse-infinite-scroll UIs for Gemini + ChatGPT + Claude (DOM strategy only).
         const scroller = getConversationScrollContainer(provider);
-        if (jobStrategy !== 'chatgpt_surgical') {
+        const hasStrongApiSource =
+          jobStrategy === 'chatgpt_surgical' ||
+          jobStrategy === 'chatgpt_embedded' ||
+          jobStrategy === 'chatgpt_page_api' ||
+          jobStrategy === 'claude_api';
+        if (!hasStrongApiSource) {
           if (provider === 'gemini' || provider === 'chatgpt' || provider === 'claude') {
             // Phase 1/3 (DOM strategy): hydrate
             await emitCaptureProgress(
@@ -512,6 +561,10 @@
       if (!snapshot.metadata || typeof snapshot.metadata !== 'object') snapshot.metadata = {};
       snapshot.metadata.capture_provider = provider;
       snapshot.metadata.capture_strategy = jobStrategy || 'unknown';
+      if (provider === 'claude' && jobStrategy === 'claude_api') {
+        snapshot.metadata.capture_completeness = claudeCompleteness;
+        if (claudeApiUrl) snapshot.metadata.capture_api_url = claudeApiUrl;
+      }
       snapshot.checksum = await calculateChecksum(snapshot);
       if (wantsSeal) snapshot.signature = await signChecksumDeviceOnly(snapshot.checksum);
 
@@ -1202,6 +1255,23 @@
       const extracted = extractMessagesFromAnyJson(json);
       if (!extracted.length) return;
 
+      // Claude: keep a handle to the "messages" endpoint we observed so we can paginate later.
+      // This is heuristic but works well in practice: we reuse the same URL and update query params.
+      try {
+        if (getProvider() === 'claude') {
+          const convId = getConversationIdFromUrl();
+          const u = String(url || '');
+          // Only store endpoints that look like "messages pages" (avoid saving generic /api/user endpoints).
+          const looksLikeMessagesEndpoint =
+            /messages/i.test(u) || /chat_messages/i.test(u) || /conversation/i.test(u);
+          if (convId && convId !== 'unknown' && looksLikeMessagesEndpoint) {
+            await chrome.storage.local.set({
+              [STORAGE_KEYS.CLAUDE_LAST_MESSAGES_URL]: { convId, url: u, updatedAt: Date.now() }
+            });
+          }
+        }
+      } catch (_) {}
+
       const sessionId = await ensureSessionId();
       // Merge into cache with de-dup
       const existingSig = new Set(apiMessagesCache.map((m) => signature(m.role, m.content)));
@@ -1630,6 +1700,216 @@
     } catch (e) {
       logError('ChatGPT embedded state extraction failed', e);
       return [];
+    }
+  }
+
+  function safeUrlWithParams(inputUrl, patchParams) {
+    try {
+      const base = String(inputUrl || '');
+      if (!base) return '';
+      const u = new URL(base, location.origin);
+      const params = patchParams && typeof patchParams === 'object' ? patchParams : {};
+      for (const [k, v] of Object.entries(params)) {
+        if (v === null || v === undefined || v === '') u.searchParams.delete(k);
+        else u.searchParams.set(k, String(v));
+      }
+      return u.toString();
+    } catch (_) {
+      return String(inputUrl || '');
+    }
+  }
+
+  function extractClaudeMessageRecords(json) {
+    // Best-effort: find arrays of message-like records with ids.
+    // We keep ids to support pagination ("before" cursor).
+    const out = [];
+    try {
+      const candidates = [];
+      const pushArr = (arr) => {
+        if (Array.isArray(arr) && arr.length) candidates.push(arr);
+      };
+
+      if (json && typeof json === 'object') {
+        pushArr(json.chat_messages);
+        pushArr(json.messages);
+        if (json.conversation && typeof json.conversation === 'object') {
+          pushArr(json.conversation.chat_messages);
+          pushArr(json.conversation.messages);
+        }
+        if (json.data && typeof json.data === 'object') {
+          pushArr(json.data.chat_messages);
+          pushArr(json.data.messages);
+        }
+      }
+      // Try the largest candidate.
+      const arr = candidates.sort((a, b) => b.length - a.length)[0] || [];
+      for (const m of arr) {
+        if (!m || typeof m !== 'object') continue;
+        const id = m.id || m.uuid || m.message_id || m.messageId || m.chat_message_id || m.chatMessageId || '';
+        const role = normalizeRole(m.role || (m.sender && m.sender.role) || m.sender, m.author || m.sender);
+        const content = normalizeContent(m.content ?? m.text ?? m.message ?? (m.completion ?? ''));
+        if (!content) continue;
+        out.push({
+          id: String(id || ''),
+          role: role || null,
+          content,
+          timestamp:
+            typeof m.created_at === 'string'
+              ? m.created_at
+              : typeof m.createdAt === 'string'
+                ? m.createdAt
+                : typeof m.updated_at === 'string'
+                  ? m.updated_at
+                  : undefined,
+          raw: m
+        });
+      }
+    } catch (_) {}
+    return out;
+  }
+
+  function detectClaudePaginationInfo(json) {
+    try {
+      if (!json || typeof json !== 'object') return { hasMore: false, nextCursor: '' };
+      const hasMore =
+        json.has_more === true ||
+        json.hasMore === true ||
+        (json.pagination && typeof json.pagination === 'object' && json.pagination.has_more === true) ||
+        (json.pagination && typeof json.pagination === 'object' && json.pagination.hasMore === true);
+      const nextCursor =
+        (typeof json.next_cursor === 'string' && json.next_cursor) ||
+        (typeof json.nextCursor === 'string' && json.nextCursor) ||
+        (json.pagination && typeof json.pagination === 'object' && (json.pagination.next_cursor || json.pagination.nextCursor)) ||
+        '';
+      return { hasMore: !!hasMore, nextCursor: String(nextCursor || '') };
+    } catch (_) {
+      return { hasMore: false, nextCursor: '' };
+    }
+  }
+
+  async function tryFetchClaudeConversationViaApi(convId) {
+    try {
+      const id = String(convId || '').trim();
+      if (!id) return { messages: [], completeness: 'unknown', usedUrl: '' };
+      if (getProvider() !== 'claude') return { messages: [], completeness: 'unknown', usedUrl: '' };
+
+      // Pick a base URL from observed API events.
+      let baseUrl = '';
+      try {
+        const res = await chrome.storage.local.get([STORAGE_KEYS.CLAUDE_LAST_MESSAGES_URL]);
+        const saved =
+          res && res[STORAGE_KEYS.CLAUDE_LAST_MESSAGES_URL] && typeof res[STORAGE_KEYS.CLAUDE_LAST_MESSAGES_URL] === 'object'
+            ? res[STORAGE_KEYS.CLAUDE_LAST_MESSAGES_URL]
+            : null;
+        if (saved && saved.convId === id && typeof saved.url === 'string') baseUrl = saved.url;
+      } catch (_) {}
+
+      if (!baseUrl) {
+        // Fallback: scan recent apiEvents for a URL that includes the conversation id.
+        try {
+          const candidates = (Array.isArray(apiEvents) ? apiEvents : [])
+            .slice(-50)
+            .map((e) => (e && typeof e.url === 'string' ? e.url : ''))
+            .filter(Boolean)
+            .filter((u) => u.includes(id))
+            .filter((u) => /api\//i.test(u));
+          // Prefer urls that look like messages listing
+          const best =
+            candidates.find((u) => /messages/i.test(u)) ||
+            candidates.find((u) => /chat_messages/i.test(u)) ||
+            candidates[0] ||
+            '';
+          baseUrl = best;
+        } catch (_) {}
+      }
+
+      if (!baseUrl) return { messages: [], completeness: 'unknown', usedUrl: '' };
+
+      const startedAt = Date.now();
+      const maxMs = 65_000;
+      const maxPages = 30;
+      const pageDelayMs = 220;
+      const all = [];
+      const sig = new Set();
+      let completeness = 'unknown';
+
+      let nextUrl = baseUrl;
+      let lastOldestId = '';
+      for (let page = 0; page < maxPages && Date.now() - startedAt < maxMs; page++) {
+        const res = await fetch(nextUrl, { credentials: 'include', headers: { Accept: 'application/json' } });
+        if (!res.ok) break;
+        const ct = (res.headers && res.headers.get && res.headers.get('content-type')) || '';
+        if (!String(ct).includes('application/json')) break;
+        const json = await res.json();
+
+        const records = extractClaudeMessageRecords(json);
+        if (!records.length) {
+          // Try generic extraction as a last resort (no ids)
+          const extracted = extractMessagesFromAnyJson(json);
+          for (const m of extracted) {
+            const s = signature(m.role, m.content);
+            if (sig.has(s)) continue;
+            sig.add(s);
+            all.push({ role: m.role, content: m.content, timestamp: m.timestamp });
+          }
+          break;
+        }
+
+        for (const r of records) {
+          const role = r.role || null;
+          const content = r.content || '';
+          if (!content) continue;
+          const s = signature(role, content);
+          if (sig.has(s)) continue;
+          sig.add(s);
+          all.push({ role, content, timestamp: r.timestamp });
+        }
+
+        const { hasMore, nextCursor } = detectClaudePaginationInfo(json);
+        if (hasMore) completeness = 'partial';
+
+        // Determine oldest message id for "before" pagination.
+        const ids = records.map((r) => r.id).filter(Boolean);
+        const oldestId = ids.length ? ids[0] : ''; // many APIs return newest->oldest; fallback below
+        // Better: pick the last non-empty id if the list is chronological.
+        const lastId = ids.length ? ids[ids.length - 1] : '';
+        const candidateOldest = lastId || oldestId || '';
+
+        // If we got a cursor, prefer it.
+        if (nextCursor) {
+          nextUrl = safeUrlWithParams(baseUrl, { cursor: nextCursor });
+          await new Promise((r) => setTimeout(r, pageDelayMs));
+          continue;
+        }
+
+        // If baseUrl already has a before-like param, update it; else try adding "before".
+        const u = new URL(baseUrl, location.origin);
+        const hasBefore = u.searchParams.has('before') || u.searchParams.has('before_id') || u.searchParams.has('beforeId');
+        const beforeKey = u.searchParams.has('before') ? 'before' : u.searchParams.has('before_id') ? 'before_id' : u.searchParams.has('beforeId') ? 'beforeId' : 'before';
+        const nextBefore = candidateOldest;
+        if (!nextBefore || nextBefore === lastOldestId) {
+          // No progress → stop
+          break;
+        }
+        lastOldestId = nextBefore;
+        if (hasBefore) {
+          u.searchParams.set(beforeKey, nextBefore);
+          nextUrl = u.toString();
+          await new Promise((r) => setTimeout(r, pageDelayMs));
+          continue;
+        }
+
+        // Add before param.
+        nextUrl = safeUrlWithParams(baseUrl, { before: nextBefore });
+        await new Promise((r) => setTimeout(r, pageDelayMs));
+      }
+
+      // If we saw has_more anywhere but couldn't page, it's still partial.
+      if (completeness === 'unknown') completeness = 'unknown';
+      return { messages: all, completeness, usedUrl: baseUrl };
+    } catch (e) {
+      logError('Claude API fetch failed', e);
+      return { messages: [], completeness: 'unknown', usedUrl: '' };
     }
   }
 
@@ -2456,7 +2736,7 @@
     // Claude can hydrate messages a bit after initial load; retry briefly to avoid capturing only the last turn.
     const maxRetries = provider === 'claude' ? 12 : 3;
     for (let i = 0; i < maxRetries; i++) {
-      await scanAndSyncMessages('initial');
+    await scanAndSyncMessages('initial');
       try {
         const res = await chrome.storage.local.get([STORAGE_KEYS.CURRENT_MESSAGES]);
         const msgs = Array.isArray(res[STORAGE_KEYS.CURRENT_MESSAGES]) ? res[STORAGE_KEYS.CURRENT_MESSAGES] : [];
