@@ -1,0 +1,89 @@
+{
+  "_branding": {
+    "generator": "RL4 Snapshot",
+    "protocol_family": "RCEP™",
+    "notice": "RCEP™ is a trademark claim. Do not remove this header.",
+    "mode": "ultra_plus"
+  },
+  "protocol": "RCEP_v2_UltraPlus",
+  "session_id": "conv-example-2025-01-07T00:00:00.000Z",
+  "timestamp": "2025-01-07T00:00:00.000Z",
+  "context_state": {
+    "core_subject": "Example Project Planning",
+    "current_goal": "Design → Implement → Validate",
+    "status": "Ultra generated"
+  },
+  "topics": [
+    {
+      "label": "architecture",
+      "weight": 1000,
+      "summary": "\"architecture\" (12x)"
+    },
+    {
+      "label": "api",
+      "weight": 900,
+      "summary": "\"api\" (9x)"
+    },
+    {
+      "label": "database",
+      "weight": 850,
+      "summary": "\"database\" (8x)"
+    }
+  ],
+  "decisions": [
+    {
+      "id": "dec-1",
+      "intent": "decide",
+      "choice": "Use PostgreSQL over MySQL for better JSON support",
+      "rationale": "Decision detected"
+    }
+  ],
+  "timeline_macro": [
+    {
+      "phase": "Phase 1",
+      "range": "1-15",
+      "summary": "Keywords: architecture, design • user:8, assistant:7"
+    },
+    {
+      "phase": "Phase 2",
+      "range": "16-30",
+      "summary": "Keywords: database, schema • user:7, assistant:8"
+    },
+    {
+      "phase": "Phase 3",
+      "range": "31-45",
+      "summary": "Keywords: api, endpoints • user:8, assistant:7"
+    }
+  ],
+  "semantic_validation": {
+    "status": "unverified",
+    "scope": "structure_only",
+    "reason": "Ultra+ does not include the full transcript",
+    "recommended_checks": [
+      "Verify assumptions against original conversation if available",
+      "Check for contradictions in decisions array",
+      "Validate timeline_macro phases match actual conversation flow"
+    ]
+  },
+  "assumptions_candidates": [
+    {
+      "text": "Assuming PostgreSQL version 14+",
+      "source_range": "16-30"
+    }
+  ],
+  "unknowns": [
+    "env_var_db_host",
+    "deployment_target"
+  ],
+  "conversation_fingerprint": {
+    "algorithm": "sha256",
+    "sha256": "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456"
+  },
+  "metadata": {
+    "total_messages": 45,
+    "generated_at": "2025-01-07T00:00:00.000Z",
+    "compression_ratio": "2847.3x"
+  },
+  "checksum": "f1e2d3c4b5a6978012345678901234567890abcdef1234567890abcdef123456"
+}
+

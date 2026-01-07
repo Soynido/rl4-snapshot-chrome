@@ -1,0 +1,97 @@
+{
+  "_branding": {
+    "generator": "RL4 Snapshot",
+    "protocol_family": "RCEP™",
+    "notice": "RCEP™ is a trademark claim. Do not remove this header.",
+    "mode": "digest"
+  },
+  "protocol": "RCEP_v1",
+  "version": "0.3.0-digest",
+  "session_id": "conv-digest-2025-01-07T00:00:00.000Z",
+  "timestamp": "2025-01-07T00:00:00.000Z",
+  "context_state": {
+    "core_subject": "Medical History Consultation",
+    "current_goal": "Review → Prescribe → Monitor",
+    "status": "Digest generated"
+  },
+  "topics": [
+    {
+      "label": "patient",
+      "weight": 1000,
+      "message_refs": ["msg-5", "msg-12", "msg-18"],
+      "summary": "\"patient\" (20x)"
+    },
+    {
+      "label": "treatment",
+      "weight": 950,
+      "message_refs": ["msg-8", "msg-15"],
+      "summary": "\"treatment\" (14x)"
+    },
+    {
+      "label": "allergy",
+      "weight": 900,
+      "message_refs": ["msg-10"],
+      "summary": "\"allergy\" (11x)"
+    }
+  ],
+  "decisions": [
+    {
+      "id": "dec-1",
+      "timestamp": "2025-01-07T00:00:00.000Z",
+      "intent": "decide",
+      "intent_text": "Decision detected",
+      "options_considered": [
+        {
+          "option": "Prescribe Treatment X",
+          "weight": 850,
+          "rationale": "Effective for condition, but check allergy history"
+        },
+        {
+          "option": "Prescribe Treatment Y",
+          "weight": 200,
+          "rationale": "Alternative option, less effective"
+        }
+      ],
+      "chosen_option": "Prescribe Treatment X",
+      "constraints": ["Check allergy to Treatment Y"],
+      "confidence_llm": 85
+    }
+  ],
+  "insights": [
+    "Patient has documented allergy to Treatment Y",
+    "Treatment X is safe and effective for this condition",
+    "Monitor patient response after 2 weeks"
+  ],
+  "context_summary": "24 messages. Topics: patient, treatment, allergy. Decisions: prescribe Treatment X, avoid Treatment Y due to allergy.",
+  "timeline_summary": [
+    {
+      "range": "1-8",
+      "summary": "From: user(Patient presents with symptoms...) → To: assistant(Reviewing medical history and current medications...)"
+    },
+    {
+      "range": "9-16",
+      "summary": "From: user(Patient reports allergy to Treatment Y...) → To: assistant(Noting allergy, recommending Treatment X as safe alternative...)"
+    },
+    {
+      "range": "17-24",
+      "summary": "From: user(Confirming Treatment X prescription...) → To: assistant(Prescription confirmed, monitoring plan established...)"
+    }
+  ],
+  "conversation_fingerprint": {
+    "algorithm": "sha256",
+    "transcript_format": "ROLE:\\nCONTENT (messages separated by \\n\\n<|RL4_MSG|>\\n\\n)",
+    "sha256": "c3d4e5f6789012345678901234567890abcdef1234567890abcdef1234567890ab"
+  },
+  "metadata": {
+    "messages": 24,
+    "messages_original": 24,
+    "original_size_chars": 125000,
+    "digest_size_chars": 2847,
+    "bundle_size_chars": 2847,
+    "compression_digest": "43.9x",
+    "compression_bundle": "43.9x",
+    "generated_at": "2025-01-07T00:00:00.000Z"
+  },
+  "checksum": "d4e5f6789012345678901234567890abcdef1234567890abcdef1234567890abcd"
+}
+

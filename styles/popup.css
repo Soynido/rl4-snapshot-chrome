@@ -1,0 +1,280 @@
+/* RL4-ish "dark premium" design system (popup-local, no external deps) */
+:root {
+  /* Backgrounds */
+  --bg-primary: #05050a;
+  --bg-secondary: #090613;
+  --bg-surface: rgba(255, 255, 255, 0.03);
+  --bg-surface-hover: rgba(255, 255, 255, 0.06);
+
+  /* Borders */
+  --border-default: rgba(255, 255, 255, 0.08);
+  --border-hover: rgba(255, 255, 255, 0.15);
+  --border-active: rgba(255, 255, 255, 0.2);
+
+  /* Text */
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.7);
+  --text-muted: rgba(255, 255, 255, 0.4);
+  --text-disabled: rgba(255, 255, 255, 0.25);
+
+  /* Accents */
+  --cta-gradient: linear-gradient(135deg, #a855f7, #7b5dff, #6366f1);
+  --cta-shadow: 0 18px 45px rgba(104, 94, 255, 0.28);
+
+  /* Status */
+  --success-gradient: linear-gradient(135deg, #10b981, #34d399);
+  --success-border: rgba(52, 211, 153, 0.5);
+  --error-bg: rgba(244, 63, 94, 0.1);
+  --error-border: rgba(244, 114, 182, 0.5);
+  --info-bg: rgba(132, 165, 255, 0.08);
+  --info-border: rgba(132, 165, 255, 0.25);
+
+  /* Radius */
+  --radius-frame: 24px;
+  --radius-card: 18px;
+  --radius-button: 14px;
+  --radius-pill: 9999px;
+
+  /* Typography */
+  --font-sans: 'Geist', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  width: 400px;
+  margin: 0;
+  padding: 18px;
+  font-family: var(--font-sans);
+  background: radial-gradient(1200px 600px at -20% -10%, rgba(168, 85, 247, 0.25), transparent 60%),
+    radial-gradient(900px 600px at 120% 20%, rgba(99, 102, 241, 0.25), transparent 55%),
+    var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border-radius: var(--radius-frame);
+  border: 1px solid var(--border-hover);
+  background: linear-gradient(180deg, rgba(9, 6, 19, 0.95), rgba(9, 6, 19, 0.82));
+  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.65);
+  overflow: hidden;
+  padding: 16px;
+}
+
+header {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+header h1 {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  background: var(--cta-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.subtitle {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+ }
+
+.field-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 600;
+ }
+
+.input {
+  width: 100%;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-button);
+  padding: 10px 12px;
+  font-size: 13px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+ }
+
+.input::placeholder {
+  color: var(--text-muted);
+}
+
+.input:focus {
+  border-color: var(--border-active);
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.18);
+ }
+
+.checkbox {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-secondary);
+  user-select: none;
+ }
+
+.checkbox.is-disabled {
+  opacity: 0.55;
+}
+
+main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.btn-primary {
+  background: var(--cta-gradient);
+  color: #0b0614;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 12px 16px;
+  border-radius: var(--radius-button);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  width: 100%;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+  box-shadow: var(--cta-shadow);
+}
+
+.btn-primary:hover {
+  filter: brightness(1.05);
+  transform: translateY(-1px);
+}
+
+.btn-primary:active {
+  transform: translateY(0px);
+  filter: brightness(0.98);
+}
+
+.btn-primary:disabled {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-disabled);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.status {
+  margin-top: 0;
+  padding: 12px;
+  border-radius: var(--radius-card);
+  font-size: 13px;
+  line-height: 1.5;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+}
+
+.status.success {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid var(--success-border);
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.status.error {
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.status.loading {
+  background: var(--info-bg);
+  border: 1px solid var(--info-border);
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.hidden {
+  display: none;
+}
+
+.metadata {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border-default);
+  backdrop-filter: blur(10px);
+}
+
+.stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+
+.stat .label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.stat span:not(.label) {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+
+.checksum-short {
+  font-size: 11px;
+  word-break: break-all;
+  text-align: right;
+  max-width: 200px;
+}
+
+footer {
+  text-align: center;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-default);
+}
+
+.link-subtle {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 12px;
+  transition: color 0.2s ease;
+}
+
+.link-subtle:hover {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.separator {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  text-align: center;
+  margin-top: 6px;
+  margin-bottom: 2px;
+  user-select: none;
+}
+
+#postActions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+

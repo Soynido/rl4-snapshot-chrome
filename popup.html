@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>RL4 Snapshot</title>
+  <link rel="stylesheet" href="styles/popup.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>RL4 Snapshot</h1>
+      <p class="subtitle">RCEP™ context • Claude + ChatGPT + Gemini • Save context → reuse anywhere</p>
+    </header>
+    
+    <main>
+      <div class="field">
+        <label class="field-label" for="urlInput">Conversation link (optional)</label>
+        <input id="urlInput" class="input" type="text" placeholder="Paste a Claude / ChatGPT / Gemini conversation URL" />
+      </div>
+
+      <label class="checkbox">
+        <input id="ultraCompress" type="checkbox" checked />
+        <span><strong>Compact</strong> (recommended) — fits most LLMs</span>
+      </label>
+
+      <label class="checkbox">
+        <input id="semanticHints" type="checkbox" checked />
+        <span><strong>Compact + Meaning</strong> (Ultra+) — adds a tiny summary & checklist (no transcript)</span>
+      </label>
+
+      <label class="checkbox">
+        <input id="includeTranscript" type="checkbox" />
+        <span><strong>Full transcript</strong> — best fidelity, can be too large</span>
+      </label>
+
+      <label class="checkbox">
+        <input id="integritySeal" type="checkbox" checked />
+        <span><strong>Integrity Seal</strong> — detects edits after export (device‑only)</span>
+      </label>
+
+      <button id="generateBtn" class="btn-primary">
+        Generate Context
+      </button>
+
+      <div id="status" class="status hidden"></div>
+      
+      <div id="metadata" class="metadata hidden">
+        <div class="stat">
+          <span class="label">Messages:</span>
+          <span id="messageCount">-</span>
+        </div>
+        <div class="stat">
+          <span class="label">Compression:</span>
+          <span id="compressionRatio">-</span>
+        </div>
+        <div class="stat">
+          <span class="label">Checksum:</span>
+          <span id="checksum" class="checksum-short">-</span>
+        </div>
+      </div>
+
+      <div id="postActions" class="hidden">
+        <div class="separator">__</div>
+
+        <button id="copyPromptBtn" class="btn-primary">
+          Copy Prompt to Clipboard
+        </button>
+
+        <a href="#" id="viewRawBtn" class="link-subtle">View raw JSON</a>
+      </div>
+    </main>
+    
+    <footer>
+      <span class="link-subtle">Cross‑LLM context, made simple.</span>
+    </footer>
+  </div>
+  
+  <script src="lib/checksum.js"></script>
+  <script src="lib/extraction.js"></script>
+  <script src="lib/snapshot.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
+

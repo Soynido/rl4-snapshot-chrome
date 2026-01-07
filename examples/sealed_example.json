@@ -1,0 +1,94 @@
+{
+  "_branding": {
+    "generator": "RL4 Snapshot",
+    "protocol_family": "RCEP™",
+    "notice": "RCEP™ is a trademark claim. Do not remove this header.",
+    "mode": "ultra_plus"
+  },
+  "protocol": "RCEP_v2_UltraPlus",
+  "session_id": "conv-sealed-2025-01-07T00:00:00.000Z",
+  "timestamp": "2025-01-07T00:00:00.000Z",
+  "context_state": {
+    "core_subject": "Legal Document Review",
+    "current_goal": "Review → Analyze → Recommend",
+    "status": "Ultra generated"
+  },
+  "topics": [
+    {
+      "label": "contract",
+      "weight": 1000,
+      "summary": "\"contract\" (15x)"
+    },
+    {
+      "label": "clause",
+      "weight": 950,
+      "summary": "\"clause\" (11x)"
+    },
+    {
+      "label": "liability",
+      "weight": 880,
+      "summary": "\"liability\" (9x)"
+    }
+  ],
+  "decisions": [
+    {
+      "id": "dec-1",
+      "intent": "decide",
+      "choice": "Reject clause 4.2 due to excessive liability exposure",
+      "rationale": "Decision detected"
+    }
+  ],
+  "timeline_macro": [
+    {
+      "phase": "Phase 1",
+      "range": "1-12",
+      "summary": "Keywords: contract, review • user:6, assistant:6"
+    },
+    {
+      "phase": "Phase 2",
+      "range": "13-24",
+      "summary": "Keywords: clause, analysis • user:6, assistant:6"
+    },
+    {
+      "phase": "Phase 3",
+      "range": "25-36",
+      "summary": "Keywords: liability, recommendation • user:6, assistant:6"
+    }
+  ],
+  "semantic_validation": {
+    "status": "unverified",
+    "scope": "structure_only",
+    "reason": "Ultra+ does not include the full transcript",
+    "recommended_checks": [
+      "Verify legal assumptions against original document",
+      "Cross-check decisions with jurisdiction requirements",
+      "Validate timeline matches actual review process"
+    ]
+  },
+  "assumptions_candidates": [
+    {
+      "text": "Assuming French law jurisdiction",
+      "source_range": "1-12"
+    }
+  ],
+  "unknowns": [],
+  "conversation_fingerprint": {
+    "algorithm": "sha256",
+    "sha256": "b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef1234567890"
+  },
+  "metadata": {
+    "total_messages": 36,
+    "generated_at": "2025-01-07T00:00:00.000Z",
+    "compression_ratio": "3124.7x"
+  },
+  "checksum": "e2d3c4b5a6978012345678901234567890abcdef1234567890abcdef1234567890",
+  "signature": {
+    "type": "device_integrity_v1",
+    "algo": "ECDSA_P256_SHA256",
+    "key_id": "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456",
+    "public_key_spki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0CAQcDQgAE...",
+    "signed_payload": "checksum:e2d3c4b5a6978012345678901234567890abcdef1234567890abcdef1234567890",
+    "value": "MEYCIQC..."
+  }
+}
+
