@@ -76,6 +76,42 @@ header {
   gap: 6px;
 }
 
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.logo-wrap {
+  width: 46px;
+  height: 46px;
+  flex-shrink: 0;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255, 245, 245, 0.98), rgba(255, 229, 229, 0.96));
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow:
+    0 14px 30px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(0, 0, 0, 0.10) inset;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.logo-img {
+  width: 30px;
+  height: 30px;
+  display: block;
+  object-fit: contain;
+}
+
+.header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
 header h1 {
   font-size: 18px;
   font-weight: 700;
@@ -84,6 +120,8 @@ header h1 {
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+  margin: 0;
+  line-height: 1.2;
 }
 
 .subtitle {
