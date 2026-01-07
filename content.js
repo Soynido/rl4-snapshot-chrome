@@ -52,6 +52,7 @@
   let apiEvents = [];
   let apiMessagesCache = [];
   let lastPathname = null;
+  let deepCaptureInProgress = false;
 
   /**
    * @param {string} msg
@@ -1779,6 +1780,9 @@
 
     try {
       observer = new MutationObserver(() => {
+        // IMPORTANT: During deep capture/hydration we use append-mode accumulation.
+        // A replace-mode mutation scan would overwrite the accumulated history with only visible DOM nodes.
+        if (deepCaptureInProgress) return;
         if (debounceTimer) clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
           scanAndSyncMessages('mutation').catch((e) => logError('scanAndSyncMessages failed', e));
@@ -2086,19 +2090,28 @@
         // Non-share pages: optionally deep capture (scroll) or normal scan (uses storage + interceptor cache).
         const capturePromise = wantsDeep
           ? (async () => {
-              // ChatGPT: first try direct backend conversation fetch (often returns full history instantly).
-              if (provider === 'chatgpt') {
-                const convId = getConversationIdFromUrl();
-                const direct = await tryFetchChatGPTConversation(convId);
-                if (direct && direct.length) return;
+              deepCaptureInProgress = true;
+              try {
+                // ChatGPT: first try direct backend conversation fetch (often returns full history instantly).
+                if (provider === 'chatgpt') {
+                  const convId = getConversationIdFromUrl();
+                  log('ChatGPT deep capture: starting backend fetch attempt', { convId });
+                  const direct = await tryFetchChatGPTConversation(convId);
+                  log('ChatGPT deep capture: backend fetch result', { messages: direct ? direct.length : 0 });
+                  if (direct && direct.length) return;
+                }
+
+                // Hydrate first for reverse infinite scroll UIs (Gemini + ChatGPT).
+                const scroller = getConversationScrollContainer(provider);
+                if (provider === 'gemini' || provider === 'chatgpt') {
+                  await hydrateChatHistory(scroller, 'hydrate');
+                }
+
+                // Then do a full pass capture (top -> bottom) to accumulate DOM-virtualized slices.
+                await deepCaptureConversation();
+              } finally {
+                deepCaptureInProgress = false;
               }
-              // Hydrate first for reverse infinite scroll UIs (Gemini + ChatGPT).
-              const scroller = getConversationScrollContainer(provider);
-              if (provider === 'gemini' || provider === 'chatgpt') {
-                await hydrateChatHistory(scroller, 'hydrate');
-              }
-              // Then do a full pass capture (top -> bottom) to accumulate DOM-virtualized slices.
-              await deepCaptureConversation();
             })()
           : scanAndSyncMessages('getMessages');
 
