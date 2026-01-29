@@ -1,4 +1,4 @@
-# RCEP™ Whitepaper (Draft)
+# RCEP™ Whitepaper
 
 **Title:** RCEP™ — Reasoning Context Encoding Protocol  
 **Status:** Draft (research-grade documentation, evolving)  
@@ -61,4 +61,178 @@ RCEP™ supports multiple “profiles” (payload shapes) that trade size vs fid
 - **Output**: 64-char lowercase hex
 
 ### Device-only Integrity Seal
+
+This whitepaper is intentionally self-contained (single-page). It mixes conceptual framing, security boundaries, and implementation-facing details where needed to avoid ambiguity.
+
+---
+
+## Reference implementation (Chrome extension)
+The RL4 Snapshot Chrome extension generates RCEP™ payloads from:
+- Claude
+- ChatGPT
+- Gemini
+- Perplexity
+- Microsoft Copilot
+
+Capture strategies (implementation-dependent):
+- DOM capture of rendered messages
+- Optional same-origin API interception mirror
+- Hydration helpers for virtualized history (notably Gemini)
+
+RCEP™ generation is **local-first** (no backend required).
+
+---
+
+## Modes (what the user selects in the extension)
+The extension exposes **three user-facing modes** (one choice at a time). They trade size vs fidelity:
+
+### 1) Compact (recommended) — `RCEP_v1` (Digest, no transcript)
+Designed to fit most LLM context windows while preserving structure:
+- Topics / decisions / insights (heuristic extraction)
+- Context summary + timeline summary (heuristics)
+- Integrity fields (checksum + optional signature)
+
+Transcript behavior: **not included** in this mode (token-saver).
+
+### 2) Compact + Meaning (Ultra+) — `RCEP_v2_UltraPlus` (no transcript)
+Designed for tight context windows while staying action-oriented:
+- `semantic_validation` explicitly marking semantics as **unverified / structure-only**
+- `semantic_spine` (tiny “why/how to continue” hybrid layer)
+- `validation_checklist` (actionable checks extracted from decisions)
+- `unknowns` (observed-but-undefined tokens)
+
+Important nuance:
+- Ultra/UltraPlus are **not designed to be lossless**.
+- Full semantic fidelity requires including transcript (`RCEP_v1` + `transcript_compact`) and/or external verification.
+
+### 3) Full transcript — `RCEP_v1` (Digest + `transcript_compact`)
+Best fidelity, but can be too large for some LLM UIs/context windows:
+- Adds `transcript_compact` to the Digest payload
+- Makes factual verification easier at the cost of size
+
+Note: the implementation may also support additional internal profiles (e.g., an “Ultra” without semantic hints). The UI intentionally keeps the choice **simple and mutually exclusive**.
+
+---
+
+## Wire format (high level)
+RCEP™ payloads are plain JSON objects. Across profiles, common fields include:
+- `protocol` (profile identifier string)
+- `session_id`, `timestamp` (session identity)
+- `_branding` (human-visible header)
+- `producer` (machine-readable producer metadata)
+- `checksum` (SHA-256 integrity checksum)
+- optional `signature` (device-only integrity seal)
+
+Additionally, the reference implementation includes `conversation_fingerprint` to allow:
+- stable linking across derived profiles (Digest → Ultra/UltraPlus)
+- integrity verification patterns without embedding full transcript everywhere
+
+---
+
+## Integrity primitives (details)
+### 1) Checksum (SHA-256)
+Checksum is computed over the **canonicalized** payload:
+- Objects: recursively sort keys lexicographically
+- Arrays: preserve order
+- Exclude the `checksum` field itself from the checksum input (or set it empty during computation)
+- Hash: SHA-256 over `JSON.stringify(canonicalizedPayload)`
+
+### 2) Device-only Integrity Seal (offline)
+The Integrity Seal is an optional ECDSA signature binding the payload to a device-held key:
+- Curve: P-256
+- Hash: SHA-256
+- Signed payload string: `checksum:<hex>`
+
+This provides **tamper evidence** (and a stable `key_id` for device continuity), but does **not** prove human identity.
+
+---
+
+## Security model (high level)
+RCEP™ targets **portability + integrity**, not “truth validation”.
+
+Threats:
+- Accidental edits
+- Malicious edits
+- Truncation by context limits
+- Replay out of context
+- Compromised signer/device
+
+Mitigations:
+- Checksum detects any mutation relative to the canonicalized payload
+- Optional device-only seal lets consumers verify the checksum was signed by the same device key
+
+Non-goals (explicit):
+- Notarization / third-party timestamping
+- Human identity proof
+- Semantic correctness guarantees without transcript/evidence
+- Protection against a compromised device generating and signing malicious content
+
+---
+
+## Practical guidance (consumer-side)
+When consuming an RCEP™ payload:
+- Prefer **structure-first** reading: `_branding`, `producer`, high-level summaries
+- In UltraPlus: treat `semantic_validation.status = unverified` as a hard boundary (do not assume truth)
+- If the payload is sealed: **do not edit** the JSON (any edit breaks checksum/signature verification)
+- If accuracy matters: request transcript or external evidence, and cross-check against `conversation_fingerprint` where applicable
+
+---
+
+## RL4 tags (“RL4 Blocks”) and finalization workflow (optional)
+In addition to exporting a **pure JSON** RCEP™ snapshot for cross‑LLM paste, the reference implementation supports an optional “RL4 Blocks” workflow.
+
+### What it is
+The extension can produce a deterministic “finalized” layer (`rl4_blocks`) by compressing the snapshot into a strict set of tagged blocks.
+
+These tags are **plain-text markers** (not HTML). The extension scans the assistant reply, extracts the blocks, and stores them for a “finalized” handoff.
+
+### User flow (4 steps, single CTA)
+The UI is designed as a **4-step wizard** (one primary action at a time):
+1. Generate Snapshot
+2. Copy finalization prompt
+3. Finalize Snapshot (paste the LLM response, then finalize)
+4. Copy Final Prompt (paste into another LLM to resume)
+
+### RL4 block tags
+The encoder output format uses these tags:
+- `<RL4-ARCH> … </RL4-ARCH>`
+- `<RL4-LAYERS> … </RL4-LAYERS>`
+- `<RL4-TOPICS> … </RL4-TOPICS>`
+- `<RL4-TIMELINE> … </RL4-TIMELINE>`
+- `<RL4-DECISIONS> … </RL4-DECISIONS>`
+- `<RL4-INSIGHTS> … </RL4-INSIGHTS>`
+
+Termination marker (MUST appear exactly once, after the human summary):
+- `<RL4-END/>`
+
+### Why it exists
+RL4 Blocks are designed to preserve:
+- validated direction (what was kept)
+- drift guards (what was rejected / non‑negotiables)
+- “control style” (how the user pilots the model)
+- where to resume (next steps + open questions)
+
+This makes the handoff more “actionable” than raw structured JSON alone, without claiming semantic truth beyond what is present.
+
+### Provider constraints: why some UIs refuse “encoder prompts”
+Some chat UIs (notably Microsoft Copilot) may refuse to generate rigid tagged templates when the prompt looks like an external “protocol” or “system-like control format”.
+
+Mitigation in this reference implementation:
+- On Copilot, RL4 Blocks can be **generated locally** (from the snapshot JSON) and sealed into the exported snapshot without asking the model to output tagged blocks.
+- For the final handoff into Copilot, the extension can use a **reference-document framing** instead of “memory/protocol/instructions” language.
+
+### Chunking markers (large conversations)
+For very long conversations, the extension can request chunk‑level notes using a compact role/content transcript separated by:
+- `<|RL4_MSG|>`
+
+Chunk note wrappers use:
+- `<RL4-CHUNK> … </RL4-CHUNK>`
+
+### Encoder metadata annotations
+Some encoder prompts include a lightweight metadata line for downstream tooling:
+- `@rl4:version=4.0|type=encoder-chunk|status=ready`
+- `@rl4:version=4.0|type=encoder-merge|status=ready`
+
+These annotations are **not part of** the RCEP™ JSON payload. They are plain-text markers for the encoder/finalization flow.
+
 

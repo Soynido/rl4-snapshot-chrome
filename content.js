@@ -22,11 +22,17 @@
     API_EVENTS: 'rl4_api_events',
     CAPTURE_PROGRESS: 'rl4_capture_progress_v1',
     LAST_SNAPSHOT: 'rl4_last_snapshot_v1',
+    LAST_SNAPSHOT_BY_TAB: 'rl4_last_snapshot_by_tab_v1',
     // RL4 Blocks Encoder capture (semi-assisted workflow)
     RL4_BLOCKS: 'rl4_blocks_v1',
     RL4_BLOCKS_STATUS: 'rl4_blocks_status_v1',
     CLAUDE_LAST_MESSAGES_URL: 'rl4_claude_last_messages_url_v1'
   };
+
+  // chrome.storage.local quota is typically ~5MB. Keep a strict cap for persisted DOM message history.
+  // Full-fidelity capture uses in-memory caches + background IndexedDB transcript store.
+  const MAX_DOM_STORAGE_MESSAGES = 450;
+  const MAX_DOM_STORAGE_TOTAL_CHARS = 420_000; // rough safety cap (DOM messages only)
 
   const SELECTORS = {
     // Claude
@@ -67,6 +73,11 @@
   const MAX_API_CACHE_TOTAL_CHARS = 12_000_000; // stop accumulating beyond ~12MB of message text
   const MAX_SINGLE_MESSAGE_CHARS = 30_000; // per-message cap to avoid runaway memory
 
+  // UI cache caps (keep the extension light even on XXL chats).
+  // Full capture is still used for snapshot generation + stored in background IndexedDB.
+  const MAX_UI_CACHE_MESSAGES = 800;
+  const MAX_UI_CACHE_TOTAL_CHARS = 300_000;
+
   let observer = null;
   let debounceTimer = null;
   let apiEvents = [];
@@ -82,6 +93,38 @@
   let progressHeartbeatTimer = null;
   let inpageUiMounted = false;
   let inpageUiOpen = false;
+  // XXL policy: avoid background DOM scanning. We only do deep DOM capture on-demand (snapshot/getMessages deep).
+  // Keep a very light MutationObserver ONLY for RL4 blocks auto-capture when armed.
+  const DOM_BACKGROUND_SCANNING_ENABLED = false;
+
+  function setApiMessagesCacheBounded(list) {
+    const arr = Array.isArray(list) ? list : [];
+    if (!arr.length) {
+      apiMessagesCache = [];
+      return;
+    }
+    // Keep last N + char budget.
+    const tail = arr.length > MAX_UI_CACHE_MESSAGES ? arr.slice(-MAX_UI_CACHE_MESSAGES) : arr;
+    let totalChars = 0;
+    const bounded = [];
+    for (let i = tail.length - 1; i >= 0; i--) {
+      const m = tail[i];
+      const c = m && m.content ? String(m.content) : '';
+      totalChars += c.length;
+      if (totalChars > MAX_UI_CACHE_TOTAL_CHARS) break;
+      bounded.push(m);
+    }
+    bounded.reverse();
+    apiMessagesCache = bounded;
+  }
+
+  function releaseLargeCaptureBuffers() {
+    try {
+      // Keep UI responsive after XXL runs.
+      setApiMessagesCacheBounded(apiMessagesCache);
+      if (Array.isArray(apiEvents) && apiEvents.length > 200) apiEvents = apiEvents.slice(-200);
+    } catch (_) {}
+  }
 
   function startProgressHeartbeat() {
     stopProgressHeartbeat();
@@ -99,8 +142,25 @@
 
   function mountInpageWidget() {
     try {
-      if (inpageUiMounted) return;
       if (!document || !document.documentElement) return;
+      const provider = getProvider();
+      const supported =
+        provider === 'claude' || provider === 'chatgpt' || provider === 'gemini' || provider === 'perplexity' || provider === 'copilot';
+      if (!supported) return;
+
+      // If we think we're mounted but the root is missing (SPA re-render), allow remount.
+      const existingRoot = document.getElementById('rl4-inpage-root');
+      if (inpageUiMounted && existingRoot) return;
+      if (inpageUiMounted && !existingRoot) {
+        inpageUiMounted = false;
+        inpageUiOpen = false;
+      }
+
+      // Clean up any stale instances before mounting (prevents double buttons).
+      const staleRoot = existingRoot;
+      if (staleRoot && staleRoot.parentElement) staleRoot.parentElement.removeChild(staleRoot);
+      const stalePanel = document.getElementById('rl4-inpage-panel');
+      if (stalePanel && stalePanel.parentElement) stalePanel.parentElement.removeChild(stalePanel);
 
       const root = document.createElement('div');
       root.id = 'rl4-inpage-root';
@@ -225,6 +285,12 @@
     }
   }
 
+  function ensureInpageWidgetMounted() {
+    try {
+      mountInpageWidget();
+    } catch (_) {}
+  }
+
   function openInpagePanel() {
     mountInpageWidget();
     try {
@@ -245,6 +311,19 @@
       const prev = prevRes && prevRes[STORAGE_KEYS.CAPTURE_PROGRESS] && typeof prevRes[STORAGE_KEYS.CAPTURE_PROGRESS] === 'object'
         ? prevRes[STORAGE_KEYS.CAPTURE_PROGRESS]
         : {};
+      // Do not let unrelated tabs overwrite an in-flight capture with a missing captureId.
+      const prevCaptureId = prev && typeof prev.captureId === 'string' ? prev.captureId : '';
+      const prevStatus = prev && typeof prev.status === 'string' ? prev.status : '';
+      const incomingCaptureId = patch && typeof patch.captureId === 'string' ? patch.captureId : '';
+      if (
+        prevCaptureId &&
+        !incomingCaptureId &&
+        prevStatus &&
+        prevStatus !== 'done' &&
+        prevStatus !== 'error'
+      ) {
+        return;
+      }
       const next = {
         ...prev,
         ...patch,
@@ -271,13 +350,108 @@
     }
   }
 
-  async function saveLastSnapshot(snapshot) {
+  async function saveLastSnapshot(snapshot, opts = {}) {
     try {
       if (!snapshot || typeof snapshot !== 'object') return;
-      // Avoid storing huge payloads (e.g., full transcripts on big chats)
-      const s = JSON.stringify(snapshot);
-      if (s.length > 1_500_000) return;
-      await chrome.storage.local.set({ [STORAGE_KEYS.LAST_SNAPSHOT]: snapshot });
+      // Avoid storing huge payloads in chrome.storage.local (quota + perf).
+      // If too large, store a "thin" snapshot (drop transcript_compact; transcript is stored in background IndexedDB).
+      const makeThin = (snap) => {
+        try {
+          const s = { ...(snap || {}) };
+          if (s && typeof s === 'object') delete s.transcript_compact;
+          return s;
+        } catch (_) {
+          return snap;
+        }
+      };
+
+      let toStore = snapshot;
+      try {
+        const raw = JSON.stringify(toStore);
+        if (raw.length > 1_500_000) toStore = makeThin(snapshot);
+      } catch (_) {}
+      try {
+        const raw2 = JSON.stringify(toStore);
+        if (raw2.length > 1_500_000) {
+          const m = snapshot && snapshot.metadata && typeof snapshot.metadata === 'object' ? snapshot.metadata : {};
+          toStore = {
+            _branding: snapshot._branding,
+            protocol: snapshot.protocol,
+            version: snapshot.version,
+            timestamp: snapshot.timestamp,
+            session_id: snapshot.session_id,
+            checksum: snapshot.checksum,
+            signature: snapshot.signature,
+            context_state: snapshot.context_state,
+            context_summary: snapshot.context_summary,
+            context_summary_ultra: snapshot.context_summary_ultra,
+            conversation_fingerprint: snapshot.conversation_fingerprint,
+            semantic_spine: snapshot.semantic_spine,
+            timeline_summary: snapshot.timeline_summary,
+            timeline_macro: snapshot.timeline_macro,
+            topics: snapshot.topics,
+            decisions: snapshot.decisions,
+            insights: snapshot.insights,
+            metadata: {
+              ...m,
+              transcript_ref: m.transcript_ref,
+              transcript_sha256: m.transcript_sha256,
+              transcript_store: m.transcript_store
+            },
+            rl4_blocks: snapshot.rl4_blocks
+          };
+        }
+      } catch (_) {}
+      const tabId = opts && typeof opts.tabId === 'number' ? opts.tabId : null;
+      if (tabId !== null) {
+        const res = await chrome.storage.local.get([STORAGE_KEYS.LAST_SNAPSHOT_BY_TAB]);
+        const prev = res && res[STORAGE_KEYS.LAST_SNAPSHOT_BY_TAB] && typeof res[STORAGE_KEYS.LAST_SNAPSHOT_BY_TAB] === 'object'
+          ? res[STORAGE_KEYS.LAST_SNAPSHOT_BY_TAB]
+          : {};
+        const next = { ...(prev || {}) };
+        next[String(tabId)] = toStore;
+        try {
+          await chrome.storage.local.set({
+            [STORAGE_KEYS.LAST_SNAPSHOT]: toStore,
+            [STORAGE_KEYS.LAST_SNAPSHOT_BY_TAB]: next
+          });
+        } catch (e) {
+          const msg = `${e && e.message ? e.message : e}`;
+          if (/quota/i.test(msg)) {
+            // Free space by dropping persisted message history; full transcript is still in background IndexedDB.
+            try {
+              await chrome.storage.local.remove([
+                STORAGE_KEYS.CURRENT_MESSAGES,
+                STORAGE_KEYS.SESSIONS_INDEX
+              ]);
+            } catch (_) {}
+            // Retry once.
+            await chrome.storage.local.set({
+              [STORAGE_KEYS.LAST_SNAPSHOT]: toStore,
+              [STORAGE_KEYS.LAST_SNAPSHOT_BY_TAB]: next
+            });
+          } else {
+            throw e;
+          }
+        }
+        return;
+      }
+      try {
+        await chrome.storage.local.set({ [STORAGE_KEYS.LAST_SNAPSHOT]: toStore });
+      } catch (e) {
+        const msg = `${e && e.message ? e.message : e}`;
+        if (/quota/i.test(msg)) {
+          try {
+            await chrome.storage.local.remove([
+              STORAGE_KEYS.CURRENT_MESSAGES,
+              STORAGE_KEYS.SESSIONS_INDEX
+            ]);
+          } catch (_) {}
+          await chrome.storage.local.set({ [STORAGE_KEYS.LAST_SNAPSHOT]: toStore });
+        } else {
+          throw e;
+        }
+      }
     } catch (_) {
       // ignore
     }
@@ -295,6 +469,64 @@
     const hash = await crypto.subtle.digest('SHA-256', bytes);
     const arr = Array.from(new Uint8Array(hash));
     return arr.map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  async function storeTranscriptToBackground({
+    convKey,
+    provider,
+    convId,
+    transcriptSha256,
+    completeness,
+    completenessReason,
+    apiUrl,
+    pagesFetched,
+    messages
+  }) {
+    try {
+      if (!isExtensionContextAlive()) return;
+      const key = String(convKey || '').trim();
+      const prov = String(provider || '').trim();
+      if (!key || !prov) return;
+
+      const list = Array.isArray(messages) ? messages : [];
+      const approxChars = list.reduce((acc, m) => acc + (m && m.content ? String(m.content).length : 0), 0);
+
+      // Chrome message size limit: send in small chunks.
+      const chunkSize = 220;
+      for (let start = 0; start < list.length; start += chunkSize) {
+        const slice = list.slice(start, start + chunkSize);
+        const payload = slice
+          .map((m, i) => ({
+            idx: start + i,
+            role: m && (m.role === 'user' || m.role === 'assistant') ? m.role : null,
+            content: m && m.content ? String(m.content) : '',
+            timestamp: m && typeof m.timestamp === 'string' ? m.timestamp : ''
+          }))
+          .filter((m) => m.content && String(m.content).trim().length > 0);
+
+        await new Promise((resolve) => {
+          chrome.runtime.sendMessage(
+            {
+              action: 'rl4_transcript_upsert',
+              convKey: key,
+              provider: prov,
+              convId: String(convId || ''),
+              transcript_sha256: String(transcriptSha256 || ''),
+              completeness: String(completeness || 'unknown'),
+              completeness_reason: String(completenessReason || ''),
+              api_url: String(apiUrl || ''),
+              pages_fetched: typeof pagesFetched === 'number' ? pagesFetched : null,
+              total_messages: list.length,
+              approx_chars: approxChars,
+              messages: payload
+            },
+            () => resolve()
+          );
+        });
+      }
+    } catch (_) {
+      // ignore (best-effort)
+    }
   }
 
   function openKeyDb() {
@@ -374,8 +606,13 @@
     const provider = getProvider();
     const outputMode = options && typeof options.outputMode === 'string' ? options.outputMode : 'digest';
     const wantsSeal = !!(options && options.wantsIntegritySeal);
-    let claudeCompleteness = 'unknown';
-    let claudeApiUrl = '';
+    let captureCompleteness = 'unknown';
+    let captureCompletenessReason = '';
+    let captureApiUrl = '';
+    let capturePagesFetched = null;
+    // When we successfully fetch full history via an API method (e.g. ChatGPT surgical),
+    // keep the full list here for snapshot generation. UI caches remain bounded for memory safety.
+    let fullApiMessagesForSnapshot = null;
 
     // Guardrail: never include transcript in ultra modes, and auto-disable for huge chats.
     let includeTranscript = !!(options && options.includeTranscript);
@@ -391,13 +628,17 @@
 
       // Capture messages (same logic as getMessages deep capture, but decoupled from popup)
       deepCaptureInProgress = true;
+      let domCaptureResult = { completeness: 'unknown', reason: '' };
       try {
         if (provider === 'chatgpt') {
           // Prefer Surgical Fetch for XXL chats: fastest + returns exact total for % progress.
           const convId = getConversationIdFromUrl();
           const surgical = await tryFetchChatGPTConversation(convId);
           if (surgical && surgical.length) {
+            fullApiMessagesForSnapshot = surgical;
             jobStrategy = 'chatgpt_surgical';
+            captureCompleteness = 'complete';
+            captureCompletenessReason = 'chatgpt_surgical';
             await emitCaptureProgress(
               {
                 captureId: captureIdActive,
@@ -440,6 +681,8 @@
               }
               if (Array.isArray(apiMessagesCache) && apiMessagesCache.length) {
                 jobStrategy = 'chatgpt_page_api';
+                captureCompleteness = 'unknown';
+                captureCompletenessReason = 'chatgpt_page_api_unverified';
               }
             }
           }
@@ -447,27 +690,91 @@
           jobStrategy = 'dom';
         }
 
-        // Claude: try API-first fetch (pagination) to avoid virtualization limits.
+        // Perplexity: thread history is loaded via same-origin GET /rest/thread/<slug>.
+        // The page may fetch it from a worker, so we explicitly request it from page context and wait for apiMessagesCache.
+        if (provider === 'perplexity') {
+          try {
+            const slug = getPerplexityThreadSlugFromUrl();
+            if (slug) {
+              const before = Array.isArray(apiMessagesCache) ? apiMessagesCache.length : 0;
+              await requestPerplexityThreadViaPageContext(slug);
+              const started = Date.now();
+              let lastLen = before;
+              let stableFor = 0;
+              while (Date.now() - started < 12_000) {
+                await new Promise((r) => setTimeout(r, 300));
+                const nowLen = Array.isArray(apiMessagesCache) ? apiMessagesCache.length : 0;
+                if (nowLen > lastLen) {
+                  lastLen = nowLen;
+                  stableFor = 0;
+                } else {
+                  stableFor += 300;
+                }
+                if (nowLen > 0 && stableFor >= 1200) break;
+              }
+              if (Array.isArray(apiMessagesCache) && apiMessagesCache.length) {
+                jobStrategy = 'perplexity_thread_api';
+                captureCompleteness = 'unknown';
+                captureCompletenessReason = 'perplexity_thread_api_unverified';
+              }
+            }
+          } catch (_) {
+            // ignore
+          }
+        }
+
+        // Claude: prefer share API when on /share/, else try conversation API (pagination) to avoid virtualization limits.
         if (provider === 'claude') {
           try {
-            const convId = getConversationIdFromUrl();
-            const apiRes = await tryFetchClaudeConversationViaApi(convId);
-            if (apiRes && Array.isArray(apiRes.messages) && apiRes.messages.length) {
-              jobStrategy = 'claude_api';
-              claudeCompleteness = typeof apiRes.completeness === 'string' ? apiRes.completeness : 'unknown';
-              claudeApiUrl = typeof apiRes.usedUrl === 'string' ? apiRes.usedUrl : '';
-              const sessionId = await ensureSessionId();
-              const nowIso = new Date().toISOString();
-              apiMessagesCache = apiRes.messages.map((m, idx) => ({
-                id: `msg-${idx + 1}`,
-                role: m && (m.role === 'user' || m.role === 'assistant') ? m.role : null,
-                content: String(m && m.content ? m.content : ''),
-                timestamp: m && typeof m.timestamp === 'string' ? m.timestamp : nowIso,
-                session_id: sessionId,
-                captured_at: Date.now(),
-                source: 'claude_api',
-                source_url: claudeApiUrl
-              }));
+            const path = window.location.pathname || '';
+            const parts = path.split('/').filter(Boolean);
+            const isShare = parts.includes('share') && parts[parts.indexOf('share') + 1];
+            if (isShare) {
+              const shareId = parts[parts.indexOf('share') + 1];
+              const shareRes = await fetchShareSnapshotMessages(shareId);
+              if (shareRes && Array.isArray(shareRes.messages) && shareRes.messages.length) {
+                jobStrategy = 'claude_share_api';
+                captureCompleteness = typeof shareRes.completeness === 'string' ? shareRes.completeness : 'unknown';
+                captureCompletenessReason =
+                  typeof shareRes.completeness_reason === 'string' ? shareRes.completeness_reason : '';
+                captureApiUrl = typeof shareRes.usedUrl === 'string' ? shareRes.usedUrl : '';
+                capturePagesFetched = typeof shareRes.pages_fetched === 'number' ? shareRes.pages_fetched : null;
+                const sessionId = await ensureSessionId();
+                const nowIso = new Date().toISOString();
+                apiMessagesCache = shareRes.messages.map((m, idx) => ({
+                  id: `msg-${idx + 1}`,
+                  role: m && (m.role === 'user' || m.role === 'assistant') ? m.role : null,
+                  content: String(m && m.content ? m.content : ''),
+                  timestamp: m && typeof m.timestamp === 'string' ? m.timestamp : nowIso,
+                  session_id: sessionId,
+                  captured_at: Date.now(),
+                  source: 'claude_share_api',
+                  source_url: captureApiUrl
+                }));
+              }
+            } else {
+              const convId = getConversationIdFromUrl();
+              const apiRes = await tryFetchClaudeConversationViaApi(convId);
+              if (apiRes && Array.isArray(apiRes.messages) && apiRes.messages.length) {
+                jobStrategy = 'claude_api';
+                captureCompleteness = typeof apiRes.completeness === 'string' ? apiRes.completeness : 'unknown';
+                captureCompletenessReason =
+                  typeof apiRes.completeness_reason === 'string' ? apiRes.completeness_reason : '';
+                captureApiUrl = typeof apiRes.usedUrl === 'string' ? apiRes.usedUrl : '';
+                capturePagesFetched = typeof apiRes.pages_fetched === 'number' ? apiRes.pages_fetched : null;
+                const sessionId = await ensureSessionId();
+                const nowIso = new Date().toISOString();
+                apiMessagesCache = apiRes.messages.map((m, idx) => ({
+                  id: `msg-${idx + 1}`,
+                  role: m && (m.role === 'user' || m.role === 'assistant') ? m.role : null,
+                  content: String(m && m.content ? m.content : ''),
+                  timestamp: m && typeof m.timestamp === 'string' ? m.timestamp : nowIso,
+                  session_id: sessionId,
+                  captured_at: Date.now(),
+                  source: 'claude_api',
+                  source_url: captureApiUrl
+                }));
+              }
             }
           } catch (_) {
             // ignore
@@ -514,7 +821,11 @@
             },
             true
           );
-          await deepCaptureConversation();
+          domCaptureResult = (await deepCaptureConversation()) || { completeness: 'unknown', reason: '' };
+          if (captureCompleteness === 'unknown' && domCaptureResult && domCaptureResult.completeness) {
+            captureCompleteness = domCaptureResult.completeness;
+            captureCompletenessReason = domCaptureResult.reason || '';
+          }
         }
 
       } finally {
@@ -525,7 +836,11 @@
       const stored = await chrome.storage.local.get([STORAGE_KEYS.CURRENT_MESSAGES]);
       const domMsgs = Array.isArray(stored[STORAGE_KEYS.CURRENT_MESSAGES]) ? stored[STORAGE_KEYS.CURRENT_MESSAGES] : [];
       const apiMsgs = Array.isArray(apiMessagesCache) ? apiMessagesCache : [];
-      const messages = apiMsgs.length >= domMsgs.length ? apiMsgs : domMsgs;
+      // Prefer full API result when available (keeps quality even if UI cache is bounded).
+      const messages =
+        Array.isArray(fullApiMessagesForSnapshot) && fullApiMessagesForSnapshot.length
+          ? fullApiMessagesForSnapshot
+          : (apiMsgs.length >= domMsgs.length ? apiMsgs : domMsgs);
 
       // Auto-disable transcript for huge captures
       try {
@@ -561,14 +876,40 @@
       if (!snapshot.metadata || typeof snapshot.metadata !== 'object') snapshot.metadata = {};
       snapshot.metadata.capture_provider = provider;
       snapshot.metadata.capture_strategy = jobStrategy || 'unknown';
-      if (provider === 'claude' && jobStrategy === 'claude_api') {
-        snapshot.metadata.capture_completeness = claudeCompleteness;
-        if (claudeApiUrl) snapshot.metadata.capture_api_url = claudeApiUrl;
-      }
+      snapshot.metadata.capture_completeness = captureCompleteness || 'unknown';
+      if (captureCompletenessReason) snapshot.metadata.capture_completeness_reason = captureCompletenessReason;
+      if (captureApiUrl) snapshot.metadata.capture_api_url = captureApiUrl;
+      if (typeof capturePagesFetched === 'number') snapshot.metadata.capture_pages_fetched = capturePagesFetched;
       snapshot.checksum = await calculateChecksum(snapshot);
       if (wantsSeal) snapshot.signature = await signChecksumDeviceOnly(snapshot.checksum);
 
-      await saveLastSnapshot(snapshot);
+      // Persist full transcript (append-only store in extension background IndexedDB)
+      try {
+        const convId = getConversationIdFromUrl();
+        const convKey = `${provider}:${convId}`;
+        const transcriptSha256 =
+          snapshot && snapshot.conversation_fingerprint && typeof snapshot.conversation_fingerprint.sha256 === 'string'
+            ? snapshot.conversation_fingerprint.sha256
+            : '';
+        snapshot.metadata.transcript_ref = convKey;
+        if (transcriptSha256) snapshot.metadata.transcript_sha256 = transcriptSha256;
+        snapshot.metadata.transcript_store = 'indexeddb_background_v1';
+        // IMPORTANT: avoid duplicating the full transcript in memory via messages.map(...) on XXL chats.
+        // Let storeTranscriptToBackground chunk + transform incrementally.
+        await storeTranscriptToBackground({
+          convKey,
+          provider,
+          convId,
+          transcriptSha256,
+          completeness: snapshot.metadata.capture_completeness,
+          completenessReason: snapshot.metadata.capture_completeness_reason || '',
+          apiUrl: snapshot.metadata.capture_api_url || '',
+          pagesFetched: snapshot.metadata.capture_pages_fetched,
+          messages
+        });
+      } catch (_) {}
+
+      await saveLastSnapshot(snapshot, { tabId: jobTabId });
       await emitCaptureProgress(
         {
           captureId: captureIdActive,
@@ -601,6 +942,8 @@
     } finally {
       snapshotJobRunning = false;
       stopProgressHeartbeat();
+      // Keep the page light after each run (especially ChatGPT XXL).
+      releaseLargeCaptureBuffers();
     }
   }
 
@@ -656,6 +999,8 @@
     if (h.includes('claude.ai')) return 'claude';
     if (h.includes('chatgpt.com') || h.includes('chat.openai.com')) return 'chatgpt';
     if (h.includes('gemini.google.com') || h.includes('bard.google.com')) return 'gemini';
+    if (h.includes('www.perplexity.ai') || h.endsWith('perplexity.ai')) return 'perplexity';
+    if (h.includes('copilot.microsoft.com')) return 'copilot';
     return 'unknown';
   }
 
@@ -696,8 +1041,22 @@
           const prev = lastPathname;
           lastPathname = p;
           log('Route changed', { reason, from: prev, to: p });
+
+          // Cleanup transient resources on SPA navigations.
+          // - Stop heartbeat (UI progress) to avoid stale timers across routes.
+          // - Disconnect MutationObserver unless RL4 blocks capture is actively armed.
+          // - Reduce in-memory caches after navigation.
+          try { stopProgressHeartbeat(); } catch (_) {}
+          try { releaseLargeCaptureBuffers(); } catch (_) {}
+          if (!rl4BlocksArmed && observer) {
+            try { observer.disconnect(); } catch (_) {}
+            observer = null;
+          }
+
           await ensureSessionId(); // will reset if conv changed
-          await scanAndSyncMessages('route-change');
+          // XXL-safe: do not scan DOM on route changes in background.
+          // Message capture is on-demand; blocks capture is either API-driven or mutation-driven (when armed).
+          if (rl4BlocksArmed && !rl4BlocksCaptured) maybeScanRl4Blocks('route-change');
         } catch (e) {
           const m = String(e && e.message ? e.message : e || '');
           if (/Extension context invalidated/i.test(m)) {
@@ -723,6 +1082,8 @@
       };
 
       window.addEventListener('popstate', () => onRouteMaybeChanged('popstate'));
+      // Best-effort cleanup when the tab is being unloaded / reloaded.
+      window.addEventListener('beforeunload', () => softShutdown('beforeunload'));
 
       // Also poll once shortly after boot (some apps update route after hydration)
       setTimeout(() => onRouteMaybeChanged('boot-timeout'), 750);
@@ -1212,6 +1573,140 @@
         return;
       }
 
+      // OpenAI-compatible /chat/completions (Perplexity / Copilot): request contains full history (messages),
+      // response contains current assistant completion (non-stream or SSE-aggregated).
+      if (payload.kind === 'openai_compat_chat_completions') {
+        const provider = String(payload.provider || getProvider() || 'unknown');
+        const url = String(payload.url || '');
+        const req = Array.isArray(payload.request_messages) ? payload.request_messages : [];
+        const assistant = Array.isArray(payload.assistant_messages) ? payload.assistant_messages : [];
+        const nowIso = new Date().toISOString();
+        const sessionId = await ensureSessionId();
+
+        // Normalize request history
+        const normalized = [];
+        let totalChars = 0;
+        for (const m of req) {
+          const role = m && (m.role === 'user' || m.role === 'assistant') ? m.role : null;
+          let content = m && m.content ? String(m.content) : '';
+          content = content.trim();
+          if (!role || !content) continue;
+          if (content.length > MAX_SINGLE_MESSAGE_CHARS) content = content.slice(0, MAX_SINGLE_MESSAGE_CHARS) + '\n[RL4_TRUNCATED_MESSAGE]';
+          totalChars += content.length;
+          if (totalChars > MAX_API_CACHE_TOTAL_CHARS) break;
+          normalized.push({
+            role,
+            content,
+            timestamp: nowIso,
+            session_id: sessionId,
+            captured_at: Date.now(),
+            source: 'openai_compat_request',
+            source_url: url
+          });
+          if (normalized.length >= MAX_API_CACHE_MESSAGES) break;
+        }
+
+        // Append assistant completion (if present)
+        const a0 = assistant.find((m) => m && m.role === 'assistant' && m.content) || null;
+        if (a0) {
+          let content = String(a0.content || '').trim();
+          if (content.length > MAX_SINGLE_MESSAGE_CHARS) content = content.slice(0, MAX_SINGLE_MESSAGE_CHARS) + '\n[RL4_TRUNCATED_MESSAGE]';
+          if (content) {
+            normalized.push({
+              role: 'assistant',
+              content,
+              timestamp: nowIso,
+              session_id: sessionId,
+              captured_at: Date.now(),
+              source: 'openai_compat_response',
+              source_url: url
+            });
+          }
+        }
+
+        // Replace cache: OpenAI-like endpoints are stateless; request includes the whole history.
+        apiMessagesCache = normalized.map((m, idx) => ({
+          id: `msg-${idx + 1}`,
+          ...m
+        }));
+
+        // Persist bounded subset for debugging/UI (same pattern as other API paths)
+        const approxChars = apiMessagesCache.reduce((acc, m) => acc + (m && m.content ? m.content.length : 0), 0);
+        const bounded = approxChars > MAX_STORAGE_MESSAGE_CHARS ? apiMessagesCache.slice(-300) : apiMessagesCache;
+        await chrome.storage.local.set({
+          [STORAGE_KEYS.API_MESSAGES]: bounded,
+          [STORAGE_KEYS.API_EVENTS]: apiEvents
+        });
+
+        // Progress update (best effort)
+        if (!captureIdActive) captureIdActive = `cap-${Date.now()}`;
+        await setCaptureProgress({
+          captureId: captureIdActive,
+          provider,
+          phase: 'api_capture',
+          status: 'capturing',
+          totalMessages: apiMessagesCache.length,
+          receivedMessages: apiMessagesCache.length,
+          approxChars
+        });
+        return;
+      }
+
+      // Perplexity thread history: GET /rest/thread/<slug> (same-origin)
+      // Interceptor sends a normalized transcript directly as [{role, content, timestamp?}].
+      if (payload.kind === 'perplexity_thread' && Array.isArray(payload.messages)) {
+        const provider = 'perplexity';
+        const url = String(payload.url || '');
+        const nowIso = new Date().toISOString();
+        const sessionId = await ensureSessionId();
+
+        const normalized = [];
+        let totalChars = 0;
+        for (const m of payload.messages) {
+          const role = m && (m.role === 'user' || m.role === 'assistant') ? m.role : null;
+          let content = m && m.content ? String(m.content) : '';
+          content = content.trim();
+          if (!role || !content) continue;
+          if (content.length > MAX_SINGLE_MESSAGE_CHARS) content = content.slice(0, MAX_SINGLE_MESSAGE_CHARS) + '\n[RL4_TRUNCATED_MESSAGE]';
+          totalChars += content.length;
+          if (totalChars > MAX_API_CACHE_TOTAL_CHARS) break;
+          normalized.push({
+            role,
+            content,
+            timestamp: nowIso,
+            session_id: sessionId,
+            captured_at: Date.now(),
+            source: 'perplexity_thread',
+            source_url: url
+          });
+          if (normalized.length >= MAX_API_CACHE_MESSAGES) break;
+        }
+
+        apiMessagesCache = normalized.map((m, idx) => ({
+          id: `msg-${idx + 1}`,
+          ...m
+        }));
+
+        const approxChars = apiMessagesCache.reduce((acc, m) => acc + (m && m.content ? m.content.length : 0), 0);
+        const bounded = approxChars > MAX_STORAGE_MESSAGE_CHARS ? apiMessagesCache.slice(-300) : apiMessagesCache;
+        await chrome.storage.local.set({
+          [STORAGE_KEYS.API_MESSAGES]: bounded,
+          [STORAGE_KEYS.API_EVENTS]: apiEvents
+        });
+
+        if (!captureIdActive) captureIdActive = `cap-${Date.now()}`;
+        await setCaptureProgress({
+          captureId: captureIdActive,
+          provider,
+          phase: 'api_capture',
+          status: 'capturing',
+          totalMessages: apiMessagesCache.length,
+          receivedMessages: apiMessagesCache.length,
+          approxChars
+        });
+        return;
+      }
+
       if (!payload.body) return;
       const url = String(payload.url || '');
       // Keep events bounded
@@ -1397,7 +1892,8 @@
               source: 'chatgpt_surgical_fetch_cookie',
               source_url: convUrl
             }));
-            apiMessagesCache = out;
+            // Keep only a bounded UI cache to avoid huge in-page memory usage on XXL chats.
+            setApiMessagesCacheBounded(out);
             await emitCaptureProgress(
               {
                 captureId: captureIdActive,
@@ -1463,7 +1959,8 @@
                   source: 'chatgpt_surgical_fetch_token',
                   source_url: convUrl
                 }));
-                apiMessagesCache = out;
+                // Keep only a bounded UI cache to avoid huge in-page memory usage on XXL chats.
+                setApiMessagesCacheBounded(out);
                 await emitCaptureProgress(
                   {
                     captureId: captureIdActive,
@@ -1570,7 +2067,8 @@
           }));
 
           // Cache in memory (best fidelity, avoids storage quota).
-          apiMessagesCache = out;
+          // Keep only a bounded UI cache to avoid huge in-page memory usage on XXL chats.
+          setApiMessagesCacheBounded(out);
           if (apiMessagesCache.length > MAX_API_CACHE_MESSAGES) {
             apiMessagesCache = apiMessagesCache.slice(-MAX_API_CACHE_MESSAGES);
           }
@@ -1606,7 +2104,40 @@
           type: 'RL4_API_REQUEST',
           payload: { action: 'fetch_chatgpt_conversation', conversationId: id }
         },
-        '*'
+        // Never broadcast across origins. We only talk to the same page origin.
+        window.location.origin
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function getPerplexityThreadSlugFromUrl() {
+    try {
+      if (getProvider() !== 'perplexity') return '';
+      const path = String(window.location.pathname || '');
+      const parts = path.split('/').filter(Boolean);
+      // Most Perplexity threads are under /search/<thread_url_slug>
+      if (parts[0] === 'search' && parts[1]) return String(parts[1] || '');
+      return '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  async function requestPerplexityThreadViaPageContext(threadSlug) {
+    try {
+      const slug = String(threadSlug || '').trim();
+      if (!slug) return false;
+      if (getProvider() !== 'perplexity') return false;
+      window.postMessage(
+        {
+          type: 'RL4_API_REQUEST',
+          payload: { action: 'fetch_perplexity_thread', threadSlug: slug }
+        },
+        // Never broadcast across origins. We only talk to the same page origin.
+        window.location.origin
       );
       return true;
     } catch (_) {
@@ -1690,7 +2221,8 @@
       }));
 
       // Cache in memory for perfect retrieval (avoid storage quota).
-      apiMessagesCache = out;
+      // Keep only a bounded UI cache to avoid huge in-page memory usage on XXL chats.
+      setApiMessagesCacheBounded(out);
       if (apiMessagesCache.length > MAX_API_CACHE_MESSAGES) {
         apiMessagesCache = apiMessagesCache.slice(-MAX_API_CACHE_MESSAGES);
       }
@@ -1746,13 +2278,42 @@
       for (const m of arr) {
         if (!m || typeof m !== 'object') continue;
         const id = m.id || m.uuid || m.message_id || m.messageId || m.chat_message_id || m.chatMessageId || '';
-        const role = normalizeRole(m.role || (m.sender && m.sender.role) || m.sender, m.author || m.sender);
-        const content = normalizeContent(m.content ?? m.text ?? m.message ?? (m.completion ?? ''));
-        if (!content) continue;
+        
+        // Improved role detection for Claude format: handle both string sender ("human"/"assistant") and object sender
+        let role = null;
+        if (m.role) {
+          role = normalizeRole(m.role, m.sender);
+        } else if (m.sender) {
+          // Claude format: sender can be a string ("human", "assistant") or an object with role
+          if (typeof m.sender === 'string') {
+            role = normalizeRole(m.sender, m.sender);
+          } else if (typeof m.sender === 'object' && m.sender.role) {
+            role = normalizeRole(m.sender.role, m.sender);
+          }
+        }
+        if (!role) {
+          role = normalizeRole(m.author, m.sender);
+        }
+        
+        // Improved content extraction: prioritize content array (Claude format), then text, then message
+        let content = '';
+        if (m.content) {
+          // normalizeContent already handles arrays like [{ type: "text", text: "..." }]
+          content = normalizeContent(m.content);
+        } else if (m.text) {
+          content = normalizeContent(m.text);
+        } else if (m.message) {
+          content = normalizeContent(m.message);
+        } else if (m.completion) {
+          content = normalizeContent(m.completion);
+        }
+        
+        if (!content || content.trim().length === 0) continue;
+        
         out.push({
           id: String(id || ''),
           role: role || null,
-          content,
+          content: content.trim(),
           timestamp:
             typeof m.created_at === 'string'
               ? m.created_at
@@ -1760,11 +2321,17 @@
                 ? m.createdAt
                 : typeof m.updated_at === 'string'
                   ? m.updated_at
-                  : undefined,
+                  : typeof m.updatedAt === 'string'
+                    ? m.updatedAt
+                    : (Array.isArray(m.content) && m.content.length > 0 && m.content[0].start_timestamp
+                        ? m.content[0].start_timestamp
+                        : undefined),
           raw: m
         });
       }
-    } catch (_) {}
+    } catch (e) {
+      logError('extractClaudeMessageRecords failed', e);
+    }
     return out;
   }
 
@@ -1790,8 +2357,8 @@
   async function tryFetchClaudeConversationViaApi(convId) {
     try {
       const id = String(convId || '').trim();
-      if (!id) return { messages: [], completeness: 'unknown', usedUrl: '' };
-      if (getProvider() !== 'claude') return { messages: [], completeness: 'unknown', usedUrl: '' };
+      if (!id) return { messages: [], completeness: 'unknown', completeness_reason: 'missing_conv_id', usedUrl: '', pages_fetched: 0 };
+      if (getProvider() !== 'claude') return { messages: [], completeness: 'unknown', completeness_reason: 'wrong_provider', usedUrl: '', pages_fetched: 0 };
 
       // Pick a base URL from observed API events.
       let baseUrl = '';
@@ -1823,7 +2390,7 @@
         } catch (_) {}
       }
 
-      if (!baseUrl) return { messages: [], completeness: 'unknown', usedUrl: '' };
+      if (!baseUrl) return { messages: [], completeness: 'unknown', completeness_reason: 'missing_api_url', usedUrl: '', pages_fetched: 0 };
 
       const startedAt = Date.now();
       const maxMs = 65_000;
@@ -1832,6 +2399,9 @@
       const all = [];
       const sig = new Set();
       let completeness = 'unknown';
+      let completenessReason = '';
+      let pagesFetched = 0;
+      let sawHasMore = false;
 
       let nextUrl = baseUrl;
       let lastOldestId = '';
@@ -1841,6 +2411,7 @@
         const ct = (res.headers && res.headers.get && res.headers.get('content-type')) || '';
         if (!String(ct).includes('application/json')) break;
         const json = await res.json();
+        pagesFetched++;
 
         const records = extractClaudeMessageRecords(json);
         if (!records.length) {
@@ -1866,7 +2437,10 @@
         }
 
         const { hasMore, nextCursor } = detectClaudePaginationInfo(json);
-        if (hasMore) completeness = 'partial';
+        if (hasMore) {
+          completeness = 'partial';
+          sawHasMore = true;
+        }
 
         // Determine oldest message id for "before" pagination.
         const ids = records.map((r) => r.id).filter(Boolean);
@@ -1904,12 +2478,24 @@
         await new Promise((r) => setTimeout(r, pageDelayMs));
       }
 
-      // If we saw has_more anywhere but couldn't page, it's still partial.
-      if (completeness === 'unknown') completeness = 'unknown';
-      return { messages: all, completeness, usedUrl: baseUrl };
+      const budgetExhausted = Date.now() - startedAt >= maxMs || pagesFetched >= maxPages;
+      if (budgetExhausted) {
+        completeness = 'partial';
+        completenessReason = 'budget_exhausted';
+      } else if (sawHasMore) {
+        completeness = 'partial';
+        completenessReason = 'api_has_more_or_pagination_detected';
+      } else if (pagesFetched > 0) {
+        completeness = 'complete';
+        completenessReason = 'api_pagination_exhausted';
+      } else {
+        completeness = 'unknown';
+        completenessReason = 'no_pages_fetched';
+      }
+      return { messages: all, completeness, completeness_reason: completenessReason, usedUrl: baseUrl, pages_fetched: pagesFetched };
     } catch (e) {
       logError('Claude API fetch failed', e);
-      return { messages: [], completeness: 'unknown', usedUrl: '' };
+      return { messages: [], completeness: 'unknown', completeness_reason: 'exception', usedUrl: '', pages_fetched: 0 };
     }
   }
 
@@ -1918,13 +2504,13 @@
    * Improved to try multiple endpoints and better handle Claude.ai format.
    * This is NOT a paid API call; it's the same endpoint the share page uses.
    * @param {string} shareId
-   * @returns {Promise<Array<any>>} messages in extension format
+   * @returns {Promise<{messages:Array<any>, completeness:string, usedUrl:string}>}
    */
   async function fetchShareSnapshotMessages(shareId) {
     try {
       if (!shareId) {
         logError('fetchShareSnapshotMessages: no shareId provided');
-        return [];
+        return { messages: [], completeness: 'unknown', completeness_reason: 'missing_share_id', usedUrl: '', pages_fetched: 0 };
       }
 
       // Try multiple endpoints (Claude.ai may use different ones)
@@ -1953,149 +2539,121 @@
         }
       };
 
-      let json = null;
+      const all = [];
+      const sig = new Set();
       let successfulUrl = null;
+      let completeness = 'unknown';
+      let completenessReason = '';
+      let pagesFetched = 0;
 
-      // Try each endpoint with both credential modes
+      const processJson = (json) => {
+        pagesFetched++;
+        const records = extractClaudeMessageRecords(json);
+        if (records.length) {
+          for (const r of records) {
+            const role = r.role || null;
+            const content = r.content || '';
+            if (!role || !content) continue;
+            const s = signature(role, content);
+            if (sig.has(s)) continue;
+            sig.add(s);
+            all.push({ role, content, timestamp: r.timestamp });
+          }
+        } else {
+          const extracted = extractMessagesFromAnyJson(json);
+          for (const m of extracted) {
+            const s = signature(m.role, m.content);
+            if (sig.has(s)) continue;
+            sig.add(s);
+            all.push(m);
+          }
+        }
+        const { hasMore, nextCursor } = detectClaudePaginationInfo(json);
+        if (hasMore) completeness = 'partial';
+        return { hasMore, nextCursor };
+      };
+
+      // Try each endpoint with both credential modes (and paginate if possible)
       for (const endpoint of endpoints) {
+        let endpointSucceeded = false;
         for (const creds of ['include', 'omit']) {
           const { ok, res, url } = await tryFetch(endpoint, creds);
-          if (ok && res) {
-            try {
-              json = await res.json();
-              successfulUrl = url;
-              log('✅ Successfully fetched share snapshot', { url, structure: Object.keys(json) });
-              break;
-            } catch (e) {
-              logError('Failed to parse JSON', { url, error: e.message });
-              continue;
+          if (!ok || !res) continue;
+          try {
+            const json = await res.json();
+            successfulUrl = url;
+            log('✅ Successfully fetched share snapshot', { url, structure: Object.keys(json) });
+
+            let { hasMore, nextCursor } = processJson(json);
+            let pageUrl = url;
+            let guard = 0;
+            while ((hasMore || nextCursor) && guard < 40) {
+              guard += 1;
+              const nextUrl = safeUrlWithParams(pageUrl, nextCursor ? { cursor: nextCursor } : {});
+              const pageRes = await fetch(nextUrl, {
+                credentials: creds,
+                headers: { Accept: 'application/json' }
+              });
+              if (!pageRes.ok) break;
+              const pageJson = await pageRes.json();
+              pageUrl = nextUrl;
+              const info = processJson(pageJson);
+              hasMore = info.hasMore;
+              nextCursor = info.nextCursor;
+              if (!hasMore && !nextCursor) break;
+              await new Promise((r) => setTimeout(r, 200));
             }
+
+            endpointSucceeded = true;
+            break;
+          } catch (e) {
+            logError('Failed to parse JSON', { url, error: e.message });
+            continue;
           }
         }
-        if (json) break;
+        if (endpointSucceeded) break;
       }
 
-      if (!json) {
+      if (!successfulUrl) {
         logError('All endpoints failed for share snapshot', { shareId });
-        return [];
+        return { messages: [], completeness: 'unknown', completeness_reason: 'no_data', usedUrl: '', pages_fetched: pagesFetched };
       }
 
-      // Extract messages with improved logic
-      const extracted = extractMessagesFromAnyJson(json);
-      log('Extracted messages from share snapshot', { 
-        count: extracted.length, 
-        structure: Object.keys(json),
-        url: successfulUrl
-      });
-
-      if (!extracted.length) {
-        // Debug: log the structure to help diagnose
-        logError('Share snapshot fetched but no messages extracted', {
-          url: successfulUrl,
-          topLevelKeys: Object.keys(json),
-          sample: JSON.stringify(json).substring(0, 1000),
-          fullStructure: JSON.stringify(json, null, 2).substring(0, 2000)
-        });
-        
-        // Try one more aggressive extraction pass
-        const aggressiveExtract = (obj, depth = 0) => {
-          if (depth > 12) return [];
-          const found = [];
-          
-          if (Array.isArray(obj)) {
-            for (const item of obj) {
-              if (item && typeof item === 'object') {
-                const role = String(item.role || item.sender || item.type || '').toLowerCase();
-                let content = '';
-                
-                if (Array.isArray(item.content)) {
-                  content = item.content
-                    .map(b => typeof b === 'string' ? b : (b?.text || b?.content || ''))
-                    .filter(Boolean)
-                    .join('\n');
-                } else if (typeof item.content === 'string') {
-                  content = item.content;
-                } else if (item.text) {
-                  content = item.text;
-                }
-                
-                if ((role === 'user' || role === 'assistant' || role === 'human' || role === 'claude') && content && content.trim()) {
-                  found.push({
-                    role: role === 'human' ? 'user' : (role === 'claude' ? 'assistant' : role),
-                    content: content.trim()
-                  });
-                }
-              }
-              if (item && typeof item === 'object') {
-                found.push(...aggressiveExtract(item, depth + 1));
-              }
-            }
-          } else if (typeof obj === 'object' && obj !== null) {
-            for (const [k, v] of Object.entries(obj)) {
-              found.push(...aggressiveExtract(v, depth + 1));
-            }
-          }
-          
-          return found;
-        };
-        
-        const aggressive = aggressiveExtract(json);
-        if (aggressive.length > 0) {
-          log('Aggressive extraction found messages', { count: aggressive.length });
-          const deduped = [];
-          const seen = new Set();
-          for (const m of aggressive) {
-            const sig = `${m.role}|${m.content.slice(0, 200).toLowerCase()}`;
-            if (!seen.has(sig)) {
-              seen.add(sig);
-              deduped.push(m);
-            }
-          }
-          if (deduped.length > 0) {
-            extracted.push(...deduped);
-            log('Using aggressively extracted messages', { count: deduped.length });
-          }
-        }
-        
-        if (!extracted.length) {
-          return [];
-        }
+      if (!all.length) {
+        logError('Share snapshot fetched but no messages extracted', { url: successfulUrl });
+        return { messages: [], completeness: 'unknown', completeness_reason: 'no_messages_extracted', usedUrl: successfulUrl, pages_fetched: pagesFetched };
       }
 
-      const sessionId = await ensureSessionId();
-      const out = [];
-      for (const m of extracted) {
-        out.push({
-          id: `msg-${out.length + 1}`,
-          role: m.role,
-          content: m.content,
-          timestamp: typeof m.timestamp === 'string' ? m.timestamp : new Date().toISOString(),
-          session_id: sessionId,
-          captured_at: Date.now(),
-          source: 'share_api',
-          source_url: successfulUrl
-        });
+      if (completeness === 'partial') {
+        completenessReason = 'api_has_more_or_pagination_detected';
+      } else if (pagesFetched > 0) {
+        completeness = 'complete';
+        completenessReason = 'share_snapshot_fetched';
+      } else {
+        completeness = 'unknown';
+        completenessReason = 'no_pages_fetched';
       }
 
       // Keep in memory for perfect retrieval (avoid chrome.storage quota).
-      apiMessagesCache = out;
+      apiMessagesCache = all.map((m, idx) => ({
+        id: `msg-${idx + 1}`,
+        role: m.role,
+        content: m.content,
+        timestamp: typeof m.timestamp === 'string' ? m.timestamp : new Date().toISOString(),
+        session_id: '',
+        captured_at: Date.now(),
+        source: 'share_api',
+        source_url: successfulUrl
+      }));
       if (apiMessagesCache.length > MAX_API_CACHE_MESSAGES) {
         apiMessagesCache = apiMessagesCache.slice(-MAX_API_CACHE_MESSAGES);
       }
 
-      // Persist only a bounded subset for debugging (optional)
-      const approxChars = apiMessagesCache.reduce((acc, m) => acc + (m.content ? m.content.length : 0), 0);
-      const bounded = approxChars > MAX_STORAGE_MESSAGE_CHARS ? apiMessagesCache.slice(-300) : apiMessagesCache;
-      await chrome.storage.local.set({
-        [STORAGE_KEYS.API_MESSAGES]: bounded,
-        [STORAGE_KEYS.API_EVENTS]: apiEvents
-      });
-
-      log('Share snapshot loaded (in-memory)', { messages: out.length, stored: bounded.length, approxChars });
-      return out;
+      log('Share snapshot loaded (in-memory)', { messages: apiMessagesCache.length });
+      return { messages: apiMessagesCache.slice(), completeness, completeness_reason: completenessReason, usedUrl: successfulUrl, pages_fetched: pagesFetched };
     } catch (e) {
       logError('fetchShareSnapshotMessages failed', e);
-      return [];
+      return { messages: [], completeness: 'unknown', completeness_reason: 'exception', usedUrl: '', pages_fetched: 0 };
     }
   }
 
@@ -2103,6 +2661,8 @@
   window.addEventListener('message', (event) => {
     try {
       if (event.source !== window) return;
+      // Ensure we only accept same-origin events (defense in depth).
+      if (event.origin !== window.location.origin) return;
       const data = event.data;
       if (!data || data.type !== 'RL4_API_RESPONSE') return;
       onApiEvent(data.payload).catch((e) => logError('onApiEvent failed', e));
@@ -2414,14 +2974,40 @@
 
     if (anySuspicious || !hasSubstantial) return null;
 
+    // Normalize common provider quirks so the sealed snapshot stays portable and strict-format.
+    // This does NOT invent content; it only normalizes delimiters/empty markers.
+    const normalizeTag = (tagText, tagName, map) => {
+      if (!tagText) return '';
+      const open = new RegExp(`^<${tagName}>`, 'i');
+      const close = new RegExp(`<\\/${tagName}>$`, 'i');
+      const inner = String(tagText || '').replace(open, '').replace(close, '');
+      let out = inner;
+      if (map && map.replaceColonKeys) {
+        out = out.replace(map.replaceColonKeys, (m, k) => `${String(k || '').toLowerCase()}=`);
+      }
+      out = out.trim();
+      if (map && map.noneToNotAvailable && out.toLowerCase() === 'none') out = 'NOT_AVAILABLE';
+      return `<${tagName}>${out}</${tagName}>`;
+    };
+
+    const topicsNorm = normalizeTag(topics, 'RL4-TOPICS', { noneToNotAvailable: true });
+    const decisionsNorm = normalizeTag(decisions, 'RL4-DECISIONS', {
+      replaceColonKeys: /\b(validated_intents|rejected|constraints|control_style)\s*:\s*/gi
+    });
+    const insightsNorm = normalizeTag(insights, 'RL4-INSIGHTS', {
+      replaceColonKeys: /\b(patterns|correlations|risks|recommendations)\s*:\s*/gi
+    });
+
+    const humanNorm = String(human_summary || '').replace(/\*\*\s*HUMAN SUMMARY\s*\*\*/gi, 'HUMAN SUMMARY').trim();
+
     return {
       arch,
       layers,
-      topics,
+      topics: topicsNorm || topics,
       timeline,
-      decisions,
-      insights,
-      human_summary,
+      decisions: decisionsNorm || decisions,
+      insights: insightsNorm || insights,
+      human_summary: humanNorm,
       found_blocks: found
     };
   }
@@ -2450,7 +3036,16 @@
         next.signature = await signChecksumDeviceOnly(next.checksum);
       }
 
-      await saveLastSnapshot(next);
+      // Best-effort: also update per-tab snapshot if we know which tab was armed for capture.
+      let tabId = null;
+      try {
+        const st = await chrome.storage.local.get([STORAGE_KEYS.RL4_BLOCKS_STATUS]);
+        const s = st && st[STORAGE_KEYS.RL4_BLOCKS_STATUS] && typeof st[STORAGE_KEYS.RL4_BLOCKS_STATUS] === 'object'
+          ? st[STORAGE_KEYS.RL4_BLOCKS_STATUS]
+          : null;
+        if (s && typeof s.tabId === 'number') tabId = s.tabId;
+      } catch (_) {}
+      await saveLastSnapshot(next, tabId !== null ? { tabId } : {});
       await chrome.storage.local.set({
         [STORAGE_KEYS.RL4_BLOCKS_STATUS]: {
           status: 'sealed',
@@ -2550,6 +3145,12 @@
 
       // Auto-seal into the latest snapshot so the exported JSON contains the “intelligence”.
       await sealRl4BlocksIntoSnapshot(payload);
+
+      // XXL-safe: once captured, disable the observer to keep the page idle/light.
+      try {
+        if (observer) observer.disconnect();
+      } catch (_) {}
+      observer = null;
     } catch (e) {
       await chrome.storage.local.set({
         [STORAGE_KEYS.RL4_BLOCKS_STATUS]: { status: 'error', error: String(e?.message || e), updatedAt: Date.now() }
@@ -2896,6 +3497,7 @@
     const startY = scroller ? scroller.scrollTop : window.scrollY;
     let lastAdded = -1;
     let stableIters = 0;
+    let reachedBottom = false;
 
     const maxY = () =>
       scroller
@@ -2923,6 +3525,7 @@
       const my = maxY();
       if (y >= my - 2) {
         stableIters++;
+        reachedBottom = true;
       }
 
       // Try scan at current position
@@ -2961,6 +3564,12 @@
     // Restore scroll position
     if (scroller) scroller.scrollTo(0, startY);
     else window.scrollTo(0, startY);
+
+    // DOM capture can't be proven complete; we can at least signal timeout vs stable completion.
+    const timedOut = Date.now() - start >= maxMs;
+    if (timedOut) return { completeness: 'partial', reason: 'dom_budget_exhausted' };
+    if (reachedBottom && stableIters >= 2) return { completeness: 'unknown', reason: 'dom_reached_bottom_unverified' };
+    return { completeness: 'unknown', reason: 'dom_capture_unverified' };
   }
 
   /**
@@ -3411,8 +4020,23 @@
    */
   async function saveToStorage(messages) {
     try {
+      const list = Array.isArray(messages) ? messages : [];
+      // Persist a bounded subset for popup retrieval / debugging (avoid quota errors).
+      let kept = list;
+      if (kept.length > MAX_DOM_STORAGE_MESSAGES) kept = kept.slice(-MAX_DOM_STORAGE_MESSAGES);
+      // Enforce rough char budget too.
+      let totalChars = 0;
+      const bounded = [];
+      for (let i = kept.length - 1; i >= 0; i--) {
+        const m = kept[i];
+        const c = m && m.content ? String(m.content) : '';
+        totalChars += c.length;
+        if (totalChars > MAX_DOM_STORAGE_TOTAL_CHARS) break;
+        bounded.push(m);
+      }
+      bounded.reverse();
       await chrome.storage.local.set({
-        [STORAGE_KEYS.CURRENT_MESSAGES]: messages,
+        [STORAGE_KEYS.CURRENT_MESSAGES]: bounded,
         [STORAGE_KEYS.CURRENT_UPDATED_AT]: Date.now()
       });
     } catch (e) {
@@ -3420,6 +4044,10 @@
       // Handle quota exceeded gracefully.
       if (/quota/i.test(msg)) {
         logError('Storage quota exceeded. Consider clearing old snapshots/messages.', e);
+        // Best-effort cleanup: drop persisted DOM history (still available in memory + background transcript store).
+        try {
+          await chrome.storage.local.remove([STORAGE_KEYS.CURRENT_MESSAGES]);
+        } catch (_) {}
       } else {
         logError('Failed to save messages to storage', e);
       }
@@ -3434,15 +4062,8 @@
 
     try {
       observer = new MutationObserver(() => {
-        // IMPORTANT: During deep capture/hydration we use append-mode accumulation.
-        // A replace-mode mutation scan would overwrite the accumulated history with only visible DOM nodes.
+        // XXL-safe: never scan messages on mutation. We only deep-capture on-demand.
         if (deepCaptureInProgress) return;
-        if (debounceTimer) clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => {
-          scanAndSyncMessages('mutation').catch((e) => logError('scanAndSyncMessages failed', e));
-        }, OBSERVER_DEBOUNCE_MS);
-
-        // RL4 Blocks capture: if armed, scan for <RL4-...> tags in recent assistant output.
         if (rl4BlocksArmed && !rl4BlocksCaptured) {
           maybeScanRl4Blocks('mutation');
         }
@@ -3453,6 +4074,7 @@
       observer.observe(target, {
         childList: true,
         subtree: true,
+        // Keep characterData to catch in-place streaming updates (used only when RL4 blocks capture is armed).
         characterData: true
       });
 
@@ -3480,6 +4102,11 @@
         rl4BlocksArmed = true;
         rl4BlocksCaptured = false;
         lastRl4BlocksScanAt = 0;
+
+        // XXL-safe: enable ultra-light observer only while armed (no message scanning on mutation).
+        try {
+          if (!observer) setupObserver();
+        } catch (_) {}
 
         // Reset stored blocks and status for a fresh encode flow.
         chrome.storage.local
@@ -3656,7 +4283,7 @@
                   id: `msg-${idx + 1}`,
                   session_id: sessionId
                 }));
-                apiMessagesCache = out;
+                setApiMessagesCacheBounded(out);
 
                 sendResponse({
                   ok: true,
@@ -3738,7 +4365,7 @@
                   id: `msg-${idx + 1}`,
                   session_id: sessionId
                 }));
-                apiMessagesCache = out;
+                setApiMessagesCacheBounded(out);
 
                 sendResponse({
                   ok: true,
@@ -3764,11 +4391,14 @@
           log('Share page detected, fetching snapshot', { shareId, pathname: window.location.pathname, provider });
           
           fetchShareSnapshotMessages(shareId)
-            .then(async (messages) => {
+            .then(async (result) => {
+              const messages = result && Array.isArray(result.messages) ? result.messages : [];
               const sessionId = await ensureSessionId();
               log('Share snapshot fetch completed', { 
-                messagesCount: messages ? messages.length : 0,
-                sessionId 
+                messagesCount: messages.length,
+                sessionId,
+                completeness: result ? result.completeness : 'unknown',
+                usedUrl: result ? result.usedUrl : ''
               });
               
               if (!messages || !messages.length) {
@@ -3968,19 +4598,39 @@
   // Boot
   injectApiInterceptor();
   installRouteChangeWatcher();
+  // Mount the in-page launcher ASAP so it doesn't depend on provider-specific DOM parsing.
+  // Some providers (e.g. Perplexity) can fail early in extractExistingMessages due to DOM changes.
+  ensureInpageWidgetMounted();
+  setTimeout(() => ensureInpageWidgetMounted(), 1000);
+  setTimeout(() => ensureInpageWidgetMounted(), 3500);
   ensureSessionId()
-    .then(() => extractExistingMessages())
-    .then(() => setupObserver())
+    // XXL-safe: do not pre-scan messages on page load; capture is on-demand.
+    // RL4 blocks auto-capture enables observer only when armed.
     .then(() => {
-      // On supported sites, show a Crisp-like RL4 launcher (bottom-right).
-      // If the user prefers Side Panel, they can still use it when available.
-      mountInpageWidget();
+      if (!DOM_BACKGROUND_SCANNING_ENABLED) return;
+      return extractExistingMessages();
     })
+    .then(() => ensureInpageWidgetMounted())
     .catch((e) => {
       logError('Initialization failed', e);
+      // Still attempt to mount the launcher even if initialization fails.
+      ensureInpageWidgetMounted();
       // Debug helper if DOM changed significantly.
       try {
-        log('DOM structure (first 500 chars):', document.body.innerHTML.substring(0, 500));
+        const body = document.body;
+        const childCount = body && body.children ? body.children.length : 0;
+        const sampleText =
+          body && typeof body.textContent === 'string'
+            ? body.textContent.replace(/\s+/g, ' ').trim().slice(0, 200)
+            : '';
+        log('DOM structure diagnostic', {
+          provider: getProvider(),
+          pathname: window.location.pathname || '',
+          readyState: document.readyState,
+          hasBody: !!body,
+          childCount,
+          sampleText: sampleText || undefined
+        });
       } catch (_) {
         // ignore
       }

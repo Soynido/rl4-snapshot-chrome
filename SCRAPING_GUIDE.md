@@ -38,9 +38,9 @@ This guide helps you debug cases where the extension captures too few messages (
 2. Reload the page (`Cmd+R` / `Ctrl+R`)
 3. Filter requests by **Fetch/XHR**
 4. Look for endpoints like:
-   - `/api/chat_snapshots/`
-   - `/api/shares/`
-   - `/backend-api/`
+     - `/api/chat_snapshots/`
+     - `/api/shares/`
+     - `/backend-api/`
 5. Open a request → **Response** and copy the full JSON
 6. Extract messages from arrays like `messages` or `chat_messages` (fields typically include `role` and `content`)
 

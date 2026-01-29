@@ -1,6 +1,6 @@
 /**
  * RL4 Forensic Scraper — Extract a full conversation from shared pages
- *
+ * 
  * USAGE:
  * 1. Open a shared Claude.ai page (e.g. https://claude.ai/share/...)
  * 2. Open DevTools Console (F12)

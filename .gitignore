@@ -1,0 +1,27 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build artifacts
+*.crx
+*.pem
+*.zip
+
+# Temporary files
+.tmp_*
+*.log
+
+# Node (if added later)
+node_modules/
+package-lock.json
+
+# Local config
+.env
+.env.local

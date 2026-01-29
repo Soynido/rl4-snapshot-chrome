@@ -1,4 +1,54 @@
 /* RL4-ish "dark premium" design system (popup-local, no external deps) */
+
+/* Fonts (local, loaded from extension) */
+@font-face {
+  font-family: 'Geist';
+  src: url('../fonts/Geist-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Geist';
+  src: url('../fonts/Geist-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Geist';
+  src: url('../fonts/Geist-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Inter';
+  src: url('../fonts/Inter-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Inter';
+  src: url('../fonts/Inter-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Inter';
+  src: url('../fonts/Inter-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   /* Backgrounds */
   --bg-primary: #05050a;
@@ -163,6 +213,73 @@ header {
   margin-top: 8px;
 }
 
+/* Options groups (digestible, avoids "can I select all?" confusion) */
+.options-group {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.options-group:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.options-group-title {
+  font-size: 12px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.84);
+  margin-bottom: 8px;
+}
+
+/* Aligned input + multi-line text */
+.option-row {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 8px 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+  margin-top: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.option-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.10);
+}
+
+.option-row input[type="checkbox"],
+.option-row input[type="radio"] {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px; /* align with first text line */
+  accent-color: var(--brand-pink);
+}
+
+.option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  line-height: 1.25;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.option-text strong {
+  color: rgba(255, 255, 255, 0.92);
+  font-weight: 800;
+  font-size: 13px;
+}
+
+.option-sub {
+  color: rgba(255, 255, 255, 0.62);
+}
+
 .header-brand {
   display: flex;
   align-items: center;
@@ -224,19 +341,19 @@ header h1 {
   color: rgba(255, 255, 255, 0.86);
 }
 
-.field {
+ .field {
   display: flex;
   flex-direction: column;
   gap: var(--s-2);
  }
 
-.field-label {
+ .field-label {
   font-size: 12px;
   color: var(--text-secondary);
   font-weight: 600;
  }
 
-.input {
+ .input {
   width: 100%;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-button);
@@ -250,15 +367,15 @@ header h1 {
 
 .input::placeholder {
   color: var(--text-muted);
-}
+ }
 
-.input:focus {
+ .input:focus {
   border-color: var(--border-active);
   background: rgba(255, 255, 255, 0.05);
   box-shadow: 0 0 0 3px var(--focus-ring);
  }
 
-.checkbox {
+ .checkbox {
   display: flex;
   gap: var(--s-2);
   align-items: center;
@@ -281,7 +398,7 @@ header h1 {
   width: 16px;
   height: 16px;
   accent-color: var(--brand-pink);
-}
+ }
 
 .checkbox span strong {
   color: rgba(255, 255, 255, 0.92);
@@ -290,12 +407,69 @@ header h1 {
 
 .checkbox.is-disabled {
   opacity: 0.55;
-}
+ }
 
 main {
   display: flex;
   flex-direction: column;
   gap: var(--s-3);
+}
+
+.stage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  /* Keep the panel height stable across steps (prevents "jumping" UI). */
+  min-height: 360px;
+}
+
+.stage-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+
+.stepper {
+  border-radius: var(--radius-card);
+  border: 1px solid rgba(244, 233, 232, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 12px 14px;
+}
+
+.stepper-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.stepper-label {
+  font-weight: 800;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.90);
+}
+
+.stepper-hint {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.70);
+  text-align: right;
+}
+
+.stepper-bar {
+  margin-top: 10px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.stepper-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--cta-gradient);
+  box-shadow: 0 12px 30px rgba(244, 233, 232, 0.14);
+  transition: width 180ms ease;
 }
 
 .btn-primary {
@@ -386,6 +560,28 @@ main {
   box-shadow: 0 0 0 1px rgba(244, 233, 232, 0.10), 0 20px 55px rgba(244, 233, 232, 0.10) !important;
 }
 
+/* --- Delight micro-interactions (click feedback) --- */
+@keyframes rl4ClickPop {
+  0% { transform: translateY(0) scale(1); }
+  45% { transform: translateY(-1px) scale(1.02); }
+  100% { transform: translateY(0) scale(1); }
+}
+
+@keyframes rl4ClickGlow {
+  0% { box-shadow: 0 0 0 0 rgba(244, 233, 232, 0.00), 0 18px 45px rgba(244, 233, 232, 0.00); }
+  35% { box-shadow: 0 0 0 6px rgba(244, 233, 232, 0.10), 0 22px 55px rgba(244, 233, 232, 0.20); }
+  100% { box-shadow: 0 0 0 0 rgba(244, 233, 232, 0.00), 0 18px 45px rgba(244, 233, 232, 0.00); }
+}
+
+.rl4-clicked {
+  animation: rl4ClickPop 240ms ease-out, rl4ClickGlow 900ms ease-out;
+}
+
+.rl4-highlight {
+  animation: rl4ClickGlow 1100ms ease-out;
+  border-color: rgba(244, 233, 232, 0.22) !important;
+}
+
 .metadata {
   display: flex;
   flex-direction: column;
@@ -395,6 +591,48 @@ main {
   border-radius: var(--radius-card);
   border: 1px solid rgba(244, 233, 232, 0.12);
   backdrop-filter: blur(10px);
+}
+
+.metadata-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.metadata-title {
+  font-size: 12px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.meta-one-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.meta-one-line strong {
+  color: rgba(255, 255, 255, 0.92);
+  font-family: var(--font-mono);
+  font-weight: 800;
+}
+
+.meta-dot {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.meta-details {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.70);
+  white-space: pre-wrap;
+  border-top: 1px dashed rgba(244, 233, 232, 0.10);
+  padding-top: 10px;
 }
 
 .stat {
@@ -476,6 +714,12 @@ footer {
   font-size: 12px;
   font-weight: 700;
   color: rgba(255, 255, 255, 0.88);
+}
+
+.last-prompt-hint {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.62);
+  line-height: 1.35;
 }
 
 .last-prompt-text {

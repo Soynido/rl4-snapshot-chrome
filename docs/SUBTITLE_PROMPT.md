@@ -1,0 +1,140 @@
+# Prompt for Gemini: Generate English Subtitles with Timestamps for RL4 Usage Video
+
+---
+
+## Your Task
+
+You are watching a video demonstration of the **RL4 Snapshot Chrome Extension**. Your task is to create professional English subtitles with accurate timestamps in SRT format.
+
+## Context: What is RL4 Snapshot?
+
+**RL4 Snapshot** is a Chrome extension that solves a critical problem: **portable context between Large Language Models (LLMs)**.
+
+### The Problem It Solves
+
+When users switch between different LLM providers (Claude, ChatGPT, Gemini, Perplexity, Microsoft Copilot), they lose context. They must repeatedly re-explain:
+- What they're working on
+- What decisions were made
+- What topics were discussed
+- What timeline/phase they're in
+
+**RL4 Snapshot** captures this "cognitive state" and packages it into a portable format called **RCEP™ (Reasoning Context Encoding Protocol)**.
+
+### How It Works
+
+The extension generates a **RCEP™ snapshot** (JSON package) that contains:
+- **Topics**: What the conversation is about
+- **Decisions**: What was chosen and why (as observable from the conversation)
+- **Timeline**: Macro phases of the work
+- **Context summary**: High-level overview
+- **Integrity**: SHA-256 checksum + optional device-only signature seal
+- **Transcript** (optional): Full conversation transcript for maximum fidelity
+
+### The 4-Step Workflow (Wizard UI)
+
+The extension uses a **4-step wizard** with a single primary action per step:
+
+1. **Step 1: Generate Snapshot**
+   - User selects a mode:
+     - **Compact** (recommended): Small, structured snapshot without transcript
+     - **Compact + Meaning (Ultra+)**: Adds tiny summary + checklist, no transcript
+     - **Full transcript**: Best fidelity, includes full conversation transcript
+   - User can optionally enable "Tamper Seal" (device-only integrity signature)
+   - User clicks "Generate Snapshot"
+   - Extension captures the conversation from the current LLM provider's UI
+
+2. **Step 2: Copy Finalization Prompt**
+   - Extension shows a "Copy finalization prompt" button
+   - User copies a prompt that asks an LLM to compress the snapshot into "RL4 Blocks" (tagged blocks like `<RL4-ARCH>`, `<RL4-LAYERS>`, `<RL4-TOPICS>`, etc.)
+   - **Note**: For Microsoft Copilot, the extension generates RL4 Blocks locally (bypassing Copilot's refusal of "protocol-like" prompts)
+
+3. **Step 3: Finalize Snapshot**
+   - User pastes the LLM response containing the RL4 Blocks into a textarea
+   - User clicks "Finalize Snapshot"
+   - Extension extracts the blocks, seals them, and stores them
+
+4. **Step 4: Copy Final Prompt**
+   - Extension shows a "Copy Final Prompt" button
+   - User copies a prompt that includes the finalized RL4 Blocks
+   - User pastes this into another LLM to resume the conversation with full context
+
+### Supported LLM Providers
+
+- Claude (claude.ai)
+- ChatGPT (chatgpt.com, chat.openai.com)
+- Gemini (gemini.google.com)
+- Perplexity (perplexity.ai)
+- Microsoft Copilot (copilot.microsoft.com)
+
+### Key Technical Concepts
+
+- **RCEP™**: The protocol format (JSON) that encodes portable context
+- **RL4 Blocks**: A compressed, tagged format for final handoff between LLMs
+- **Checksum**: SHA-256 hash of the canonicalized JSON (detects any edits)
+- **Integrity Seal**: Optional ECDSA signature (device-only, offline) that binds the checksum to a device key
+- **Epistemic honesty**: Ultra/UltraPlus profiles explicitly mark semantics as "unverified" when transcript is omitted
+
+### Why This Matters
+
+- **No more context loss** when switching LLMs
+- **Portable memory** that survives sessions, devices, and providers
+- **Integrity verification** to detect edits or tampering
+- **Actionable handoff** with RL4 Blocks that preserve direction, decisions, and next steps
+
+---
+
+## Instructions for Subtitle Generation
+
+1. **Watch the entire video carefully**
+2. **Identify all spoken words, UI interactions, and key moments**
+3. **Create subtitles in SRT format** with:
+   - Sequential subtitle numbers
+   - Timestamps in format: `HH:MM:SS,mmm --> HH:MM:SS,mmm`
+   - Accurate English transcription of all speech
+   - Clear, concise text (max ~42 characters per line, 2 lines max per subtitle)
+   - Natural pauses at sentence boundaries
+
+4. **Include context for UI actions**:
+   - When buttons are clicked (e.g., "Clicking Generate Snapshot")
+   - When text is copied (e.g., "Copying finalization prompt to clipboard")
+   - When options are selected (e.g., "Selecting Compact mode")
+   - When metadata is shown (e.g., "Showing capture summary: 15 messages, 2.3x compression")
+
+5. **Use technical terms accurately**:
+   - "RCEP" (pronounced "R-C-E-P" or "recep")
+   - "RL4" (pronounced "R-L-4")
+   - "Snapshot" (not "screenshot")
+   - "Checksum" (not "hash" in user-facing context)
+   - "Integrity Seal" (when referring to the signature)
+
+6. **Maintain professional tone**: Clear, concise, instructional
+
+7. **Timing precision**: 
+   - Start timestamps should align with when speech begins
+   - End timestamps should allow natural reading pace (typically 3-5 words per second)
+   - Leave small gaps (0.2-0.5s) between subtitles for readability
+
+8. **Format example**:
+```
+1
+00:00:00,000 --> 00:00:03,500
+Welcome to RL4 Snapshot, a Chrome extension
+that captures context from LLM conversations.
+
+2
+00:00:03,500 --> 00:00:07,200
+Let me show you how to generate a snapshot
+from a Claude conversation.
+```
+
+---
+
+## Output Format
+
+Provide the subtitles in **SRT format** (SubRip Text), ready to be saved as a `.srt` file.
+
+---
+
+## Begin Analysis
+
+Please watch the video and generate the English subtitles with timestamps.
